@@ -1,11 +1,13 @@
 import streamlit as st
 from urllib.parse import quote
 
-st.title("🧠 RIA Executive Job OS (Conversion Optimized)")
+st.title("🧠 RIA Executive Job OS (Conversion + Positioning Engine)")
 
 st.write("""
-Optimized for one outcome:  
-👉 Increase interview conversion rate for Director / VP / Head of Ops roles in RIAs ($500M+ proxy)
+Optimized for:
+- RIAs ($500M+ proxy)
+- Interview conversion probability
+- Role-specific positioning strategy (Balanced Ops + Client Experience narrative)
 """)
 
 # ----------------------------
@@ -22,7 +24,7 @@ roles = {
 }
 
 # ----------------------------
-# COMP TIERS (UNCHANGED)
+# COMP TIERS
 # ----------------------------
 
 def comp_tier(label):
@@ -37,26 +39,19 @@ def comp_tier(label):
     return "💰 Tier 1 ($140k–$160k)"
 
 # ----------------------------
-# INTERVIEW CONVERSION ENGINE (NEW CORE)
+# CONVERSION SCORE
 # ----------------------------
 
 def conversion_score(label):
-    score = 0
     l = label.lower()
+    score = 0
 
-    # seniority alignment
-    if "director" in l or "vp" in l or "head" in l:
+    if any(k in l for k in ["director", "vp", "head"]):
         score += 3
-
-    # domain alignment (your strongest area)
     if "operations" in l:
         score += 2
-
-    # ria relevance
     if "ria" in l or "wealth" in l:
         score += 2
-
-    # advisor/client exposure advantage
     if "client" in l or "advisor" in l:
         score += 1
 
@@ -64,27 +59,48 @@ def conversion_score(label):
 
 def conversion_label(score):
     if score >= 6:
-        return "🔥 HIGH CONVERSION (Strong Interview Probability)"
+        return "🔥 HIGH CONVERSION"
     if score >= 4:
-        return "⚡ MEDIUM CONVERSION (Needs Positioning)"
-    return "🟡 LOW CONVERSION (High Effort / Low Yield)"
+        return "⚡ MEDIUM CONVERSION"
+    return "🟡 LOW CONVERSION"
 
-def positioning_tip(label):
+# ----------------------------
+# POSITIONING ENGINE (NEW CORE)
+# ----------------------------
+
+def positioning_statement(label):
     l = label.lower()
 
+    # Balanced narrative (Ops + Client Experience)
+
     if "vp" in l:
-        return "Position as: platform-scale ops + advisor experience + transformation leadership"
+        return (
+            "Position as: scaled wealth operations leader bridging platform efficiency "
+            "and advisor/client experience across complex RIA environments."
+        )
+
     if "director" in l:
-        return "Position as: operational owner with measurable scaling + client impact"
-    if "head" in l:
-        return "Position as: enterprise operator / org design + execution leader"
-    return "Position carefully — likely needs reframing to increase seniority signal"
+        return (
+            "Position as: operational owner with strong execution discipline across "
+            "advisor servicing, workflow optimization, and scalable operating models."
+        )
+
+    if "head" in l or "coo" in l:
+        return (
+            "Position as: enterprise operator driving organizational design, scale, "
+            "and advisor/client experience transformation across multi-office RIAs."
+        )
+
+    return (
+        "Position as: hybrid operations + client experience leader focused on "
+        "scaling advisor support and improving operational efficiency."
+    )
 
 # ----------------------------
 # UI
 # ----------------------------
 
-st.subheader("📊 Conversion Optimized Pipeline")
+st.subheader("📊 Conversion + Positioning Output")
 
 for label, query in roles.items():
 
@@ -93,7 +109,7 @@ for label, query in roles.items():
     tier = comp_tier(label)
     conv = conversion_score(label)
     conv_label = conversion_label(conv)
-    tip = positioning_tip(label)
+    position = positioning_statement(label)
 
     st.markdown(f"### {label}")
     st.markdown(f"[View Jobs →]({url})")
@@ -101,26 +117,24 @@ for label, query in roles.items():
     st.write(tier)
     st.write(f"🎯 Conversion Score: {conv}/7")
     st.write(conv_label)
-    st.write(f"🧠 Positioning: {tip}")
+    st.write(f"🧠 Positioning: {position}")
 
 st.divider()
 
 # ----------------------------
-# EXECUTION RULES (UPDATED)
+# EXECUTION RULES
 # ----------------------------
 
-st.subheader("⚡ Conversion Rules")
+st.subheader("⚡ Execution Logic")
 
 st.write("""
-To maximize interview conversion:
-
-1. Focus ONLY on 🔥 HIGH CONVERSION roles first
-2. Apply ONLY when positioning message is clear
-3. Avoid 🟡 LOW CONVERSION unless strategically necessary
-4. Every application must be framed as:
-   - scale operator
-   - transformation leader
-   - advisor/client experience owner
+1. Focus: 🔥 HIGH CONVERSION roles first  
+2. Apply only when positioning statement is clear  
+3. Use positioning language in resume + recruiter calls  
+4. Avoid generic “operations” framing — always tie to:
+   - advisor experience
+   - scalability
+   - platform transformation
 """)
 
-st.success("Goal: fewer applications → higher interview rate → faster VP/Director placement")
+st.success("System now optimized for interview conversion + positioning alignment.")
