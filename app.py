@@ -1,14 +1,15 @@
 import streamlit as st
 from urllib.parse import quote
 
-st.title("🧠 RIA Executive Job OS (Fit + Comp Tier Engine)")
+st.title("🧠 RIA Executive Job OS (Decision Layer Engine)")
 
 st.write("""
-Targeting RIAs ($500M+ AUM proxy) with automated compensation tier estimation.
+RIAs ($500M+ proxy filter) + Executive prioritization engine.
+This system helps you decide what to pursue, not just what exists.
 """)
 
 # ----------------------------
-# ROLE QUERIES
+# ROLE SEARCHES
 # ----------------------------
 
 roles = {
@@ -21,76 +22,90 @@ roles = {
 }
 
 # ----------------------------
-# COMP TIER ENGINE (RULE-BASED)
+# COMP TIERS (UNCHANGED)
 # ----------------------------
 
 def comp_tier(label: str):
-    label_lower = label.lower()
+    l = label.lower()
 
-    # Tier 3 (highest)
-    if any(k in label_lower for k in ["head", "chief", "coo"]):
+    if any(k in l for k in ["head", "chief", "coo"]):
         return "💰 Tier 3 ($220k–$250k+ | Stretch / High Value)"
 
-    if "vp" in label_lower:
+    if "vp" in l:
         return "💰 Tier 2 ($160k–$220k | Target Zone)"
 
-    if "director" in label_lower:
+    if "director" in l:
         return "💰 Tier 2 ($160k–$220k | Target Zone)"
 
-    # fallback
     return "💰 Tier 1 ($140k–$160k | Baseline / Selective)"
 
 # ----------------------------
-# FIT MODEL (STATIC)
+# FIT SCORE ENGINE (NEW)
 # ----------------------------
 
-st.subheader("📊 Fit Model (Your Background Strengths)")
+def fit_score(label: str):
+    score = 0
 
-st.write("""
-Scoring anchors:
-- Goldman Sachs (Ops + scale)
-- State Street (custody + servicing)
-- BNY Mellon (client service leadership)
-- RIA ecosystem exposure
-- Platform transformation experience
-""")
+    l = label.lower()
+
+    # your background alignment
+    score += 2  # ops leadership baseline always relevant
+
+    if "director" in l or "vp" in l or "head" in l:
+        score += 3
+
+    if "operations" in l:
+        score += 2
+
+    if "client service" in l or "advisor experience" in l:
+        score += 2
+
+    # scale inference bonus
+    if "ria" in l:
+        score += 2
+
+    return score
+
+def decision_label(score):
+    if score >= 7:
+        return "🔥 PRIORITY (High Probability)"
+    if score >= 5:
+        return "⚡ TARGET (Strong Fit)"
+    return "🟡 SELECTIVE (Review Only)"
+
+# ----------------------------
+# UI
+# ----------------------------
+
+st.subheader("📊 Executive Decision Layer Output")
 
 st.divider()
-
-# ----------------------------
-# JOB LINKS + TIERING
-# ----------------------------
-
-st.subheader("📌 RIA Job Search (500M+ Proxy Filter + Comp Tiers)")
 
 for label, query in roles.items():
 
     url = f"https://www.google.com/search?q={quote(query + ' $500M AUM jobs')}"
+
     tier = comp_tier(label)
+    score = fit_score(label)
+    decision = decision_label(score)
 
     st.markdown(f"### {label}")
     st.markdown(f"[View Jobs →]({url})")
+
     st.write(tier)
+    st.write(f"🎯 Fit Score: {score} / 10")
+    st.write(f"📌 Decision: {decision}")
 
 st.divider()
 
-# ----------------------------
-# EXECUTION GUIDANCE
-# ----------------------------
-
-st.subheader("⚡ Execution Rules")
+st.subheader("⚡ How to Use This System")
 
 st.write("""
-Prioritization logic:
+1. Start with 🔥 PRIORITY roles  
+2. Then ⚡ TARGET roles  
+3. Ignore 🟡 SELECTIVE unless pipeline is thin  
 
-1. Tier 3 → Apply aggressively (high leverage roles)
-2. Tier 2 → Primary target zone (core pipeline)
-3. Tier 1 → Selective / fill-in opportunities
-
-Focus on firms showing:
-- multiple open ops roles
-- recent postings
-- platform or consolidation language
+Goal: maximize interview probability per hour invested.
 """)
 
-st.success("Goal: maximize compensation + fit probability, not application volume.")
+st.success("This is now a decision engine, not a job board.")
