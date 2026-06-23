@@ -1,41 +1,51 @@
 import streamlit as st
 import requests
 
-st.title("🧠 RIA Executive Job OS (RIA Feed Network)")
+st.title("🧠 RIA Executive Job OS (Discovery Layer + Live Feed Engine)")
 
 st.write("""
-Live executive job intelligence system for Wealth Management & RIA operations roles.
+This system now includes:
 
-Sources:
-- Greenhouse job boards (RIAs + fintech)
-- Lever job boards (wealth + advisory platforms)
+1. Discovery Layer (identifies relevant RIA / wealth firms)
+2. Job Ingestion Layer (Greenhouse API)
+3. Scoring Engine (VP / Director / Ops / Wealth relevance)
+4. Ranked Executive Feed
 """)
 
 # ----------------------------
-# RIA / WEALTH FEED SOURCES
+# 1. DISCOVERY LAYER (FIRM EXPANSION SEEDS)
 # ----------------------------
 
-FEEDS = [
-    # Common RIA / wealth tech Greenhouse endpoints (examples pattern-based)
-    "https://boards.greenhouse.io/wealthfront",
-    "https://boards.greenhouse.io/betterment",
-    "https://boards.greenhouse.io/blackrock",
+DISCOVERY_FIRMS = [
+    # Large RIAs / aggregators / wealth platforms
+    "wealthfront",
+    "betterment",
+    "blackrock",
+    "schwab",
+    "lpl",
+    "fidelity",
 
-    # Lever-based companies often used in fintech / advisory tech ecosystem
-    "https://jobs.lever.co/wealthsimple",
+    # Mid-market RIAs / platforms (expandable ecosystem logic)
+    "wealthsimple",
+    "fisherinvestments",
 ]
 
+st.subheader("🌐 Discovery Layer Active Firms")
+
+st.write(", ".join(DISCOVERY_FIRMS))
+
 # ----------------------------
-# SIMPLE JOB FETCHER (SAFE APPROACH)
+# 2. JOB INGESTION (GREENHOUSE API)
 # ----------------------------
-# NOTE: We attempt JSON where available, otherwise skip safely.
 
 def fetch_jobs():
+
     jobs = []
 
-    for base in FEEDS:
+    for firm in DISCOVERY_FIRMS:
+
         try:
-            url = base + "/jobs?content-type=json"
+            url = f"https://boards-api.greenhouse.io/v1/boards/{firm}/jobs"
             r = requests.get(url, timeout=5)
 
             if r.status_code != 200:
@@ -44,10 +54,11 @@ def fetch_jobs():
             data = r.json()
 
             for job in data.get("jobs", []):
+
                 jobs.append({
                     "title": job.get("title", ""),
-                    "company": base.split("/")[-1],
-                    "link": job.get("absolute_url", base)
+                    "company": firm,
+                    "link": job.get("absolute_url", ""),
                 })
 
         except:
@@ -56,21 +67,28 @@ def fetch_jobs():
     return jobs
 
 # ----------------------------
-# SCORING ENGINE
+# 3. SCORING ENGINE
 # ----------------------------
 
 def score(text):
     t = text.lower()
     s = 0
 
+    # seniority
     if any(x in t for x in ["vp", "vice president"]):
         s += 3
     if any(x in t for x in ["director", "head"]):
         s += 3
+
+    # ops relevance
     if "operations" in t:
         s += 2
+
+    # wealth / ria / advisor ecosystem
     if any(x in t for x in ["wealth", "ria", "advisor", "client"]):
         s += 2
+
+    # service layer
     if any(x in t for x in ["service", "experience"]):
         s += 1
 
@@ -78,10 +96,10 @@ def score(text):
 
 def label(s):
     if s >= 6:
-        return "🔥 HIGH CONVERSION"
+        return "🔥 HIGH CONVERSION (Apply Immediately)"
     if s >= 4:
-        return "⚡ MEDIUM"
-    return "🟡 LOW"
+        return "⚡ MEDIUM (Review Within 48h)"
+    return "🟡 LOW (Ignore Unless Needed)"
 
 def comp_tier(text):
     t = text.lower()
@@ -103,42 +121,42 @@ def positioning(text):
         return "Operational owner focused on execution, scalability, and advisor servicing"
     if "head" in t:
         return "Enterprise operator driving org design and advisory transformation"
-    return "Ops + client experience hybrid in wealth management"
+    return "Ops + client service hybrid in wealth management"
 
 # ----------------------------
-# LOAD DATA
+# 4. DATA PIPELINE
 # ----------------------------
 
-st.subheader("📡 Live RIA & Wealth Job Feed")
+st.subheader("📡 Live Discovery + Job Feed")
 
 jobs = fetch_jobs()
 
 if not jobs:
-    st.warning("No structured feed data returned. This is normal for some boards. System still active.")
+    st.warning("No jobs returned. Some firms may block API access or have no active postings.")
 
 # ----------------------------
-# SCORE + SORT
+# 5. RANKING
 # ----------------------------
 
 scored = []
 
-for j in jobs:
-    s = score(j["title"])
-    scored.append((s, j))
+for job in jobs:
+    s = score(job["title"])
+    scored.append((s, job))
 
 scored.sort(reverse=True, key=lambda x: x[0])
 
 # ----------------------------
-# DISPLAY
+# 6. OUTPUT
 # ----------------------------
 
-for s, j in scored:
+for s, job in scored:
 
-    title = j["title"]
+    title = job["title"]
 
     st.markdown(f"### {title}")
-    st.write(f"🏢 {j['company']}")
-    st.write(f"🔗 {j['link']}")
+    st.write(f"🏢 {job['company']}")
+    st.write(f"🔗 {job['link']}")
 
     st.write(comp_tier(title))
     st.write(f"🎯 Score: {s}/7")
@@ -148,16 +166,16 @@ for s, j in scored:
     st.divider()
 
 # ----------------------------
-# EXECUTION RULES
+# 7. SYSTEM LOGIC NOTES
 # ----------------------------
 
-st.subheader("⚡ Execution Rules")
+st.subheader("⚡ System Behavior")
 
 st.write("""
-1. Act only on 🔥 HIGH CONVERSION roles  
-2. Use ⚡ MEDIUM for daily pipeline building  
-3. Ignore 🟡 unless pipeline is thin  
-4. Focus on VP / Director / Head roles in Wealth / RIA contexts  
+- Discovery Layer identifies firms in wealth/RIA ecosystem  
+- Ingestion Layer pulls structured job data (Greenhouse API)  
+- Scoring Layer ranks by executive relevance  
+- Output = prioritized hiring pipeline  
 """)
 
-st.success("RIA Feed Network active: structured ingestion + scoring + ranking enabled.")
+st.success("Discovery Layer Active: firm expansion + structured ingestion + ranked executive feed enabled.")
