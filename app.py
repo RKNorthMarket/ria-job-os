@@ -1,31 +1,31 @@
 import streamlit as st
 import requests
 import urllib.parse
+from collections import defaultdict
 
-st.title("🧠 RIA Executive Job OS (Market Intelligence Engine v9)")
+st.title("🧠 RIA Executive Job OS (Hiring Intelligence Engine v10)")
 
 st.write("""
-This version expands beyond known firms into the full RIA market:
+Now includes:
 
-✔ Platform RIAs (Schwab, Fidelity, LPL, AssetMark, Cetera)  
-✔ Independent RIA discovery layer (market-wide signal detection)  
-✔ LinkedIn executive job search layer  
-✔ ATS ingestion (Greenhouse + Lever)  
-✔ Balanced scoring engine (precision + recall)  
+✔ Platform RIA ingestion  
+✔ LinkedIn discovery layer  
+✔ Independent RIA discovery layer  
+✔ Hiring intelligence scoring layer (NEW)  
+✔ Firm-level hiring velocity detection  
+✔ Role concentration analytics  
 
-Target roles:
-- Director of Operations
-- Head of Operations
-- Director of Service
-- Head of Service
-- VP Operations (Wealth / RIA)
+This system identifies:
+- Where RIA firms are actively hiring Ops/Service leaders
+- Which firms are “hot”
+- Where VP/Director roles are clustering
 """)
 
 # ----------------------------
 # 1. PLATFORM RIA UNIVERSE
 # ----------------------------
 
-RIA_PLATFORMS = [
+RIA_FIRMS = [
     "schwab",
     "fidelity",
     "lpl",
@@ -87,20 +87,18 @@ def fetch_lever(company):
     return jobs
 
 
-def fetch_all_ats():
+def fetch_ats():
     jobs = []
-
-    for c in RIA_PLATFORMS:
-        jobs.extend(fetch_greenhouse(c))
-        jobs.extend(fetch_lever(c))
-
+    for f in RIA_FIRMS:
+        jobs.extend(fetch_greenhouse(f))
+        jobs.extend(fetch_lever(f))
     return jobs
 
 # ----------------------------
 # 3. LINKEDIN DISCOVERY LAYER
 # ----------------------------
 
-def linkedin_jobs():
+def linkedin_layer():
 
     titles = [
         "Director of Operations",
@@ -115,23 +113,22 @@ def linkedin_jobs():
     firms = [
         "RIA firm",
         "wealth management",
-        "registered investment advisor",
-        "independent wealth management",
+        "independent RIA",
         "family office",
-        "LPL Financial",
-        "Fidelity Wealth",
         "Schwab Wealth",
+        "Fidelity Wealth",
+        "LPL Financial",
         "AssetMark",
-        "Cetera"
+        "Cetera",
+        "Morgan Stanley Wealth"
     ]
 
     results = []
 
     for t in titles:
         for f in firms:
-
-            q = f"{t} {f}"
-            url = "https://www.linkedin.com/jobs/search/?keywords=" + urllib.parse.quote(q)
+            q = urllib.parse.quote(f"{t} {f}")
+            url = f"https://www.linkedin.com/jobs/search/?keywords={q}"
 
             results.append({
                 "title": t,
@@ -143,27 +140,26 @@ def linkedin_jobs():
     return results
 
 # ----------------------------
-# 4. INDEPENDENT RIA DISCOVERY LAYER
+# 4. INDEPENDENT RIA DISCOVERY
 # ----------------------------
 
-def independent_ria_market_signals():
+def independent_ria_layer():
 
     queries = [
-        "independent RIA hiring director of operations",
-        "wealth advisory firm operations director jobs",
-        "family office client service director hiring",
-        "RIA firm $500M AUM operations hiring",
-        "registered investment advisor client service manager jobs"
+        "independent RIA hiring operations director",
+        "wealth advisory firm client service director jobs",
+        "RIA firm $1B AUM operations hiring",
+        "family office operations leadership hiring",
+        "registered investment advisor service director jobs"
     ]
 
     results = []
 
     for q in queries:
-
         url = "https://www.google.com/search?q=" + urllib.parse.quote(q)
 
         results.append({
-            "title": "Independent RIA Market Discovery",
+            "title": "Independent RIA Market Signal",
             "company": "independent RIA ecosystem",
             "link": url,
             "source": "market_discovery"
@@ -172,26 +168,21 @@ def independent_ria_market_signals():
     return results
 
 # ----------------------------
-# 5. MASTER INGESTION PIPELINE
+# 5. MASTER PIPELINE
 # ----------------------------
 
 def fetch_all_sources():
 
     jobs = []
 
-    # Platform RIAs (structured ATS)
-    jobs.extend(fetch_all_ats())
-
-    # LinkedIn discovery layer
-    jobs.extend(linkedin_jobs())
-
-    # Independent RIA discovery layer
-    jobs.extend(independent_ria_market_signals())
+    jobs.extend(fetch_ats())
+    jobs.extend(linkedin_layer())
+    jobs.extend(independent_ria_layer())
 
     return jobs
 
 # ----------------------------
-# 6. 🧠 BALANCED SCORING ENGINE
+# 6. 🧠 JOB SCORING ENGINE
 # ----------------------------
 
 def score_job(job):
@@ -205,7 +196,7 @@ def score_job(job):
     score = 0
 
     # ----------------------------
-    # HARD EXCLUSIONS (ONLY ATS ENTRIES)
+    # HARD EXCLUSIONS (ATS ONLY)
     # ----------------------------
     if source != "linkedin_search":
 
@@ -215,7 +206,7 @@ def score_job(job):
             "marketing", "content", "copywriter",
             "legal", "counsel", "hr",
             "recruiter", "payroll",
-            "accounting", "tax", "audit",
+            "accounting", "tax",
             "teacher", "hospital", "chef",
             "mortgage", "loan", "lending",
             "retail banking"
@@ -225,13 +216,7 @@ def score_job(job):
             return -999
 
     # ----------------------------
-    # PLATFORM RIA SIGNAL
-    # ----------------------------
-    if any(x in company for x in RIA_PLATFORMS):
-        score += 4
-
-    # ----------------------------
-    # ROLE INTENT SIGNALS
+    # CORE ROLE SIGNALS
     # ----------------------------
     role_weights = {
         "director": 3,
@@ -254,101 +239,119 @@ def score_job(job):
         if k in title:
             score += v
 
+    # ----------------------------
+    # PLATFORM SIGNAL
+    # ----------------------------
+    if any(x in company for x in RIA_FIRMS):
+        score += 4
+
     return score
 
 # ----------------------------
-# 7. FILTER THRESHOLD
+# 7. HIRING INTELLIGENCE LAYER (NEW CORE)
+# ----------------------------
+
+def hiring_intelligence(jobs):
+
+    firm_counts = defaultdict(int)
+    role_focus = defaultdict(int)
+
+    for j in jobs:
+
+        company = j["company"].lower()
+        title = j["title"].lower()
+
+        firm_counts[company] += 1
+
+        if any(x in title for x in ["director", "head", "vp"]):
+            role_focus[company] += 1
+
+    return firm_counts, role_focus
+
+
+def firm_heat_score(firm_counts, role_focus):
+
+    heat = {}
+
+    for f in firm_counts:
+
+        total = firm_counts[f]
+        exec_roles = role_focus.get(f, 0)
+
+        score = total + (exec_roles * 2)
+
+        heat[f] = score
+
+    return heat
+
+# ----------------------------
+# 8. FILTER
 # ----------------------------
 
 def is_relevant(job):
     return score_job(job) >= 6
 
 # ----------------------------
-# 8. LABELING
-# ----------------------------
-
-def label(score):
-
-    if score >= 9:
-        return "🔥 HIGH MATCH"
-    elif score >= 7:
-        return "⚡ STRONG MATCH"
-    return "🟡 MODERATE MATCH"
-
-def tier(title):
-
-    t = title.lower()
-
-    if "head" in t:
-        return "💰 $200k–$250k+"
-    if "vp" in t:
-        return "💰 $160k–$220k"
-    if "director" in t:
-        return "💰 $160k–$220k"
-    return "💰 $140k–$170k"
-
-def positioning(title):
-
-    t = title.lower()
-
-    if "vp" in t:
-        return "Senior RIA ops leader bridging advisor experience and platform execution"
-    if "director" in t:
-        return "Operational owner of advisor service delivery and scalability"
-    if "head" in t:
-        return "Enterprise operator shaping wealth operations strategy"
-    return "RIA operations execution role"
-
-# ----------------------------
 # 9. EXECUTION
 # ----------------------------
 
-st.subheader("📡 RIA Market Intelligence Engine (Full Coverage Mode)")
+st.subheader("📡 RIA Hiring Intelligence Engine")
 
 jobs = fetch_all_sources()
 
-scored = []
-
-for j in jobs:
-    s = score_job(j)
-    if s != -999 and s >= 6:
-        scored.append((s, j))
+filtered = [j for j in jobs if is_relevant(j)]
+scored = [(score_job(j), j) for j in filtered if score_job(j) != -999]
 
 scored.sort(reverse=True, key=lambda x: x[0])
 
-if not scored:
-    st.warning("No matching RIA roles found (adjust threshold or data freshness).")
+# ----------------------------
+# 10. HIRING INTELLIGENCE COMPUTATION
+# ----------------------------
+
+firm_counts, role_focus = hiring_intelligence(filtered)
+heat_scores = firm_heat_score(firm_counts, role_focus)
+
+top_firms = sorted(heat_scores.items(), key=lambda x: x[1], reverse=True)[:10]
 
 # ----------------------------
-# 10. OUTPUT
+# 11. OUTPUT — JOB FEED
 # ----------------------------
+
+st.subheader("🎯 Executive Job Feed")
 
 for s, j in scored:
 
     st.markdown(f"### {j['title']}")
     st.write(f"🏢 {j['company']} ({j['source']})")
     st.write(f"🔗 {j['link']}")
-
     st.write(f"🎯 Score: {s}")
-    st.write(label(s))
-    st.write(tier(j["title"]))
-    st.write(f"🧠 Positioning: {positioning(j['title'])}")
 
     st.divider()
 
 # ----------------------------
-# 11. SYSTEM STATE
+# 12. OUTPUT — HIRING INTELLIGENCE LAYER
+# ----------------------------
+
+st.subheader("🔥 Hiring Heat Map (Top Firms Hiring Ops Leaders)")
+
+for f, score in top_firms:
+
+    st.write(f"🏢 {f}")
+    st.write(f"🔥 Hiring Heat Score: {score}")
+
+# ----------------------------
+# 13. SYSTEM STATE
 # ----------------------------
 
 st.subheader("⚡ System State")
 
 st.write("""
-✔ Platform RIA ingestion active  
-✔ LinkedIn discovery layer active  
-✔ Independent RIA market discovery layer active  
-✔ Balanced scoring engine enabled  
-✔ Hard exclusions applied only where appropriate  
-✔ Full RIA ecosystem coverage enabled  
+✔ ATS ingestion active  
+✔ LinkedIn discovery active  
+✔ Independent RIA discovery active  
+✔ Job scoring engine active  
+✔ Hiring intelligence layer active  
+✔ Firm heat mapping enabled  
 """)
 
-st.success("RIA Market Intelligence Engine v9 active: platform + independent + LinkedIn coverage enabled.")
+st.success("RIA Hiring Intelligence Engine v10 active: firm-level hiring signals + executive role detection enabled.")
