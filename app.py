@@ -1,34 +1,46 @@
 import streamlit as st
 import requests
 
-st.title("🧠 RIA Executive Job OS (Workday + Filtered Intelligence Graph)")
+st.title("🧠 RIA Executive Job OS (RIA-Only Intelligence Graph v3)")
 
 st.write("""
-Now includes:
-- Greenhouse ingestion
-- Lever ingestion
-- Workday best-effort ingestion
-- HARD relevance filtering (critical fix)
-- Executive scoring + ranking
+This system is now strictly constrained to:
+
+✔ RIA firms  
+✔ Wealth management platforms  
+✔ Advisory operations  
+✔ Custody / clearing ecosystems  
+
+It explicitly excludes:
+✖ Banking operations  
+✖ Mortgage / lending  
+✖ Fraud / risk ops  
+✖ Insurance  
+✖ Engineering / IT roles (unless explicitly wealth-platform advisory systems)
 """)
 
 # ----------------------------
-# DISCOVERY LAYER (SEED FIRMS)
+# 1. RIA FIRM DISCOVERY LAYER (CONSTRAINED CORE SET)
 # ----------------------------
 
-def discover_firms():
+def discover_ria_firms():
+    """
+    This is intentionally constrained to known RIA / wealth ecosystem firms.
+    No expansion into general financial services.
+    """
+
     return [
         "wealthfront",
         "betterment",
-        "blackrock",
-        "wealthsimple",
         "fisherinvestments",
         "lpl",
-        "schwab"
+        "schwab",
+        "blackrock",
+        "wealthsimple"
     ]
 
 # ----------------------------
-# ATS DETECTION
+# 2. ATS DETECTION
 # ----------------------------
 
 def detect_ats(company):
@@ -36,14 +48,15 @@ def detect_ats(company):
     greenhouse = ["wealthfront", "betterment", "blackrock", "fisherinvestments"]
     lever = ["wealthsimple"]
 
-    return {
-        "greenhouse": company in greenhouse,
-        "lever": company in lever,
-        "workday": True  # we always attempt fallback
-    }
+    if company in greenhouse:
+        return "greenhouse"
+    if company in lever:
+        return "lever"
+
+    return "unknown"
 
 # ----------------------------
-# INGESTION LAYERS
+# 3. JOB INGESTION LAYER
 # ----------------------------
 
 def fetch_greenhouse(company):
@@ -91,83 +104,82 @@ def fetch_lever(company):
 
     return jobs
 
-
-def fetch_workday(company):
-
-    jobs = []
-
-    # BEST-EFFORT heuristic endpoint (not guaranteed across firms)
-    url = f"https://{company}.wd1.myworkdayjobs.com/wday/cxs/{company}/careers"
-
-    try:
-        r = requests.get(url, timeout=5)
-
-        if r.status_code == 200:
-
-            data = r.json()
-
-            for job in data.get("jobPostings", []):
-                jobs.append({
-                    "title": job.get("title", ""),
-                    "company": company,
-                    "link": "",
-                    "source": "workday"
-                })
-
-    except:
-        pass
-
-    return jobs
-
 # ----------------------------
-# FULL INGESTION PIPELINE
+# 4. PIPELINE EXECUTION
 # ----------------------------
 
 def fetch_all_jobs():
 
-    firms = discover_firms()
+    firms = discover_ria_firms()
     all_jobs = []
 
     for f in firms:
-
         all_jobs.extend(fetch_greenhouse(f))
         all_jobs.extend(fetch_lever(f))
-        all_jobs.extend(fetch_workday(f))
 
     return all_jobs
 
 # ----------------------------
-# 🔥 CRITICAL FIX: DOMAIN FILTER (NEW)
+# 5. STRICT RIA DOMAIN FILTER (CORE FIX)
 # ----------------------------
 
-def is_ria_relevant(text):
+def is_ria_relevant(title):
 
-    t = text.lower()
+    t = title.lower()
 
-    keywords = [
-        "wealth",
-        "ria",
-        "advisor",
-        "client",
-        "operations",
-        "investment",
-        "portfolio",
-        "financial",
-        "service",
-        "experience",
-        "custody",
-        "clearing"
+    # -----------------------------
+    # HARD EXCLUSIONS (STRICT)
+    # -----------------------------
+    exclude = [
+        "mortgage",
+        "loan",
+        "lending",
+        "fraud",
+        "risk",
+        "credit",
+        "insurance",
+        "banking",
+        "branch",
+        "call center",
+        "retail",
+        "underwriting",
+        "engineering manager",
+        "software engineer",
+        "developer",
+        "it support",
+        "systems"
     ]
 
-    return any(k in t for k in keywords)
+    if any(x in t for x in exclude):
+        return False
+
+    # -----------------------------
+    # STRICT RIA / WEALTH SIGNALS
+    # -----------------------------
+    include = [
+        "ria",
+        "registered investment",
+        "wealth management",
+        "financial advisor",
+        "advisor services",
+        "investment advisory",
+        "portfolio",
+        "custody",
+        "clearing",
+        "trading",
+        "client service",
+        "wealth"
+    ]
+
+    return any(x in t for x in include)
 
 # ----------------------------
-# SCORING ENGINE (ONLY AFTER FILTERING)
+# 6. SCORING ENGINE (POST-FILTER ONLY)
 # ----------------------------
 
-def score(text):
+def score(title):
 
-    t = text.lower()
+    t = title.lower()
     s = 0
 
     if any(x in t for x in ["vp", "vice president"]):
@@ -184,15 +196,16 @@ def score(text):
     return s
 
 def label(s):
+
     if s >= 6:
         return "🔥 HIGH CONVERSION"
     if s >= 4:
         return "⚡ MEDIUM"
     return "🟡 LOW"
 
-def tier(text):
+def tier(title):
 
-    t = text.lower()
+    t = title.lower()
 
     if any(x in t for x in ["head", "coo", "chief"]):
         return "💰 $220k–$250k+"
@@ -202,9 +215,9 @@ def tier(text):
         return "💰 $160k–$220k"
     return "💰 $140k–$160k"
 
-def positioning(text):
+def positioning(title):
 
-    t = text.lower()
+    t = title.lower()
 
     if "vp" in t:
         return "Scaled wealth ops leader bridging advisor experience + platform execution"
@@ -215,45 +228,42 @@ def positioning(text):
     return "Ops + client service hybrid in wealth management"
 
 # ----------------------------
-# EXECUTION PIPELINE
+# 7. EXECUTION
 # ----------------------------
 
-st.subheader("📡 Live RIA Job Feed (Filtered + Workday Enabled)")
+st.subheader("📡 RIA-Only Live Job Feed")
 
 jobs = fetch_all_jobs()
 
-# ----------------------------
-# APPLY FILTER BEFORE SCORING
-# ----------------------------
+# FILTER FIRST (CRITICAL CHANGE)
+filtered = [j for j in jobs if is_ria_relevant(j["title"])]
 
-filtered_jobs = [j for j in jobs if is_ria_relevant(j["title"])]
-
-if not filtered_jobs:
-    st.warning("No relevant jobs found after filtering. Try expanding firm list or ATS coverage.")
+if not filtered:
+    st.warning("No RIA-relevant roles found in current ATS coverage.")
 
 # ----------------------------
-# SCORE + SORT
+# 8. SCORE + SORT
 # ----------------------------
 
 scored = []
 
-for job in filtered_jobs:
-    s = score(job["title"])
-    scored.append((s, job))
+for j in filtered:
+    s = score(j["title"])
+    scored.append((s, j))
 
 scored.sort(reverse=True, key=lambda x: x[0])
 
 # ----------------------------
-# OUTPUT
+# 9. OUTPUT
 # ----------------------------
 
-for s, job in scored:
+for s, j in scored:
 
-    title = job["title"]
+    title = j["title"]
 
     st.markdown(f"### {title}")
-    st.write(f"🏢 {job['company']} ({job['source']})")
-    st.write(f"🔗 {job['link']}")
+    st.write(f"🏢 {j['company']} ({j['source']})")
+    st.write(f"🔗 {j['link']}")
 
     st.write(tier(title))
     st.write(f"🎯 Score: {s}/7")
@@ -263,16 +273,16 @@ for s, job in scored:
     st.divider()
 
 # ----------------------------
-# SYSTEM NOTES
+# 10. SYSTEM STATE
 # ----------------------------
 
-st.subheader("⚡ System Logic Update")
+st.subheader("⚡ System State")
 
 st.write("""
-- Workday + Greenhouse + Lever ingestion enabled  
-- HARD filter removes IT, marketing, PM, irrelevant roles  
-- Scoring only applies to RIA/wealth-adjacent roles  
-- System now behaves as a domain-specific executive job radar  
+✔ RIA-only ingestion constraint active  
+✔ Banking / mortgage / fraud / engineering excluded  
+✔ Filter applied BEFORE scoring (critical fix)  
+✔ ATS-based ingestion (Greenhouse + Lever only)  
 """)
 
-st.success("Filtered RIA Intelligence Graph active (Workday + domain filtering enabled).")
+st.success("RIA Intelligence Graph v3 active: strict domain filtering + structured ingestion + ranking enabled.")
