@@ -1,17 +1,17 @@
 import streamlit as st
 from urllib.parse import quote
 
-st.title("🧠 RIA Executive Job OS (Conversion + Positioning Engine)")
+st.title("🧠 RIA Executive Job OS (Hybrid Job Launcher)")
 
 st.write("""
-Optimized for:
-- RIAs ($500M+ proxy)
-- Interview conversion probability
-- Role-specific positioning strategy (Balanced Ops + Client Experience narrative)
+Targeting RIAs ($500M+ proxy) with multi-source job discovery:
+- LinkedIn Jobs (primary)
+- Indeed Jobs (secondary)
+- Google fallback (broad discovery)
 """)
 
 # ----------------------------
-# ROLE SET
+# ROLE QUERIES
 # ----------------------------
 
 roles = {
@@ -65,76 +65,55 @@ def conversion_label(score):
     return "🟡 LOW CONVERSION"
 
 # ----------------------------
-# POSITIONING ENGINE (NEW CORE)
+# HYBRID JOB LAUNCHER (NEW CORE FIX)
 # ----------------------------
 
-def positioning_statement(label):
-    l = label.lower()
+def job_links(query):
+    q = quote(query + " jobs")
 
-    # Balanced narrative (Ops + Client Experience)
+    linkedin = f"https://www.linkedin.com/jobs/search/?keywords={quote(query)}"
+    indeed = f"https://www.indeed.com/jobs?q={quote(query)}"
+    google = f"https://www.google.com/search?q={q}"
 
-    if "vp" in l:
-        return (
-            "Position as: scaled wealth operations leader bridging platform efficiency "
-            "and advisor/client experience across complex RIA environments."
-        )
-
-    if "director" in l:
-        return (
-            "Position as: operational owner with strong execution discipline across "
-            "advisor servicing, workflow optimization, and scalable operating models."
-        )
-
-    if "head" in l or "coo" in l:
-        return (
-            "Position as: enterprise operator driving organizational design, scale, "
-            "and advisor/client experience transformation across multi-office RIAs."
-        )
-
-    return (
-        "Position as: hybrid operations + client experience leader focused on "
-        "scaling advisor support and improving operational efficiency."
-    )
+    return linkedin, indeed, google
 
 # ----------------------------
 # UI
 # ----------------------------
 
-st.subheader("📊 Conversion + Positioning Output")
+st.subheader("📊 Hybrid Job Launcher (Real Job Sources)")
 
 for label, query in roles.items():
 
-    url = f"https://www.google.com/search?q={quote(query + ' $500M AUM jobs')}"
+    linkedin, indeed, google = job_links(query)
 
     tier = comp_tier(label)
     conv = conversion_score(label)
     conv_label = conversion_label(conv)
-    position = positioning_statement(label)
 
     st.markdown(f"### {label}")
-    st.markdown(f"[View Jobs →]({url})")
 
     st.write(tier)
     st.write(f"🎯 Conversion Score: {conv}/7")
     st.write(conv_label)
-    st.write(f"🧠 Positioning: {position}")
 
-st.divider()
+    st.write("🔵 [LinkedIn Jobs](" + linkedin + ")")
+    st.write("🟡 [Indeed Jobs](" + indeed + ")")
+    st.write("🟢 [Google Search](" + google + ")")
+
+    st.divider()
 
 # ----------------------------
 # EXECUTION RULES
 # ----------------------------
 
-st.subheader("⚡ Execution Logic")
+st.subheader("⚡ Execution Rules")
 
 st.write("""
-1. Focus: 🔥 HIGH CONVERSION roles first  
-2. Apply only when positioning statement is clear  
-3. Use positioning language in resume + recruiter calls  
-4. Avoid generic “operations” framing — always tie to:
-   - advisor experience
-   - scalability
-   - platform transformation
+1. Start with 🔥 HIGH CONVERSION roles  
+2. Use LinkedIn first (highest signal for RIAs)  
+3. Use Indeed to catch smaller RIAs not on LinkedIn  
+4. Use Google only for backup discovery  
 """)
 
-st.success("System now optimized for interview conversion + positioning alignment.")
+st.success("System upgraded: direct job discovery enabled across multiple sources.")
