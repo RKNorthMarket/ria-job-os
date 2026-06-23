@@ -109,3 +109,26 @@ Goal: maximize interview probability per hour invested.
 """)
 
 st.success("This is now a decision engine, not a job board.")
+st.divider()
+
+st.subheader("📬 Executive Daily Brief (Priority View)")
+
+priority_roles = [
+    "Director of Operations (RIA / Wealth)",
+    "VP Operations (Wealth Management)",
+    "Head of Operations (RIA Platforms)"
+]
+
+st.write("Top focus areas today:")
+
+for r in priority_roles:
+    st.write(f"🔥 {r}")
+
+st.write("""
+### Execution Rule:
+- Spend 70% of time on 🔥 PRIORITY roles
+- 25% on ⚡ TARGET roles
+- Ignore 🟡 SELECTIVE unless pipeline is low
+""")
+
+st.success("Daily brief mode active — focus on decisions, not browsing.")
