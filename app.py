@@ -1,70 +1,44 @@
-
 import streamlit as st
 import requests
-import openai
+from urllib.parse import quote
 
-SERPAPI_KEY = st.secrets["SERPAPI_KEY"]
-OPENAI_API_KEY = st.secrets["OPENAI_API_KEY"]
+st.title("🧠 RIA Executive Job OS (Free Version)")
 
-openai.api_key = OPENAI_API_KEY
+st.write("""
+This version uses curated job search links (no APIs required).
+Click a category to open live job results.
+""")
 
-st.set_page_config(page_title="RIA Job OS", layout="wide")
+roles = {
+    "Director of Operations (Wealth Management)": "Director of Operations wealth management",
+    "VP Operations (RIA / Advisory)": "VP Operations RIA wealth management",
+    "Head of Operations": "Head of Operations wealth management RIA",
+    "Client Service Director": "Client Service Director wealth management",
+    "Practice Management": "Practice Management financial advisory",
+    "Advisor Experience": "Advisor Experience wealth management"
+}
 
-KEYWORDS = ["ria", "wealth", "operations", "advisor", "client", "crm", "onboarding"]
+st.subheader("📌 Target Role Searches")
 
-def fetch_jobs():
-    url = "https://serpapi.com/search.json"
-    params = {
-        "engine": "google_jobs",
-        "q": "RIA VP operations wealth management director",
-        "api_key": SERPAPI_KEY
-    }
-    return requests.get(url, params=params).json().get("jobs_results", [])
+for label, query in roles.items():
+    url = f"https://www.google.com/search?q={quote(query + ' jobs')}"
+    st.markdown(f"### {label}")
+    st.markdown(f"[View Jobs →]({url})")
 
-def score(job):
-    text = (job["title"] + job.get("description","")).lower()
-    return sum([4 for k in KEYWORDS if k in text])
+st.divider()
 
-def analyze(job, score):
-    prompt = f"""
-Job: {job['title']}
-Company: {job.get('company_name')}
-Score: {score}
+st.subheader("🎯 Strategy Filter")
 
-Explain fit, risks, and recommendation (APPLY / PASS).
-"""
+st.write("""
+Focus areas:
+- RIAs (Registered Investment Advisors)
+- Wealth management firms
+- Custody / clearing firms
+- Advisor platforms
+- Fintech servicing advisors
 
-    res = openai.ChatCompletion.create(
-        model="gpt-4o-mini",
-        messages=[{"role": "user", "content": prompt}]
-    )
+Target compensation: $150k–$200k+
+Titles: Director, VP, Head of Operations, COO (smaller firms)
+""")
 
-    return res["choices"][0]["message"]["content"]
-
-st.title("🧠 RIA Executive Job OS")
-
-if st.button("Run Scan"):
-
-    jobs = fetch_jobs()
-
-    results = []
-
-    for j in jobs:
-        s = score(j)
-        analysis = analyze(j, s)
-        results.append((s, j, analysis))
-
-    results.sort(reverse=True, key=lambda x: x[0])
-
-    for s, j, analysis in results[:10]:
-
-        st.markdown("---")
-        st.subheader(j["title"])
-        st.write(j.get("company_name"))
-        st.write(f"Score: {s}")
-
-        st.write(analysis)
-
-        link = j.get("apply_options", [{}])[0].get("link", "")
-        if link:
-            st.markdown(f"[Apply Here]({link})")
+       
