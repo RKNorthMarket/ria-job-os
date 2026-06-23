@@ -1,26 +1,24 @@
 import streamlit as st
 from urllib.parse import quote
 
-st.title("🧠 RIA Executive Job OS (Hybrid Job Launcher)")
+st.title("🧠 RIA Executive Job OS (Pipeline Control + Conversion Engine)")
 
 st.write("""
-Targeting RIAs ($500M+ proxy) with multi-source job discovery:
-- LinkedIn Jobs (primary)
-- Indeed Jobs (secondary)
-- Google fallback (broad discovery)
+Hybrid job launcher optimized for wealth management / RIA operations leadership roles.
+Focus: Director, VP, Head of Operations, Client Service leadership.
 """)
 
 # ----------------------------
-# ROLE QUERIES
+# ROLE QUERIES (cleaned inputs)
 # ----------------------------
 
 roles = {
-    "Director of Operations (RIA / Wealth)": "Director of Operations RIA wealth management",
-    "VP Operations (Wealth Management)": "VP Operations wealth management RIA",
-    "Head of Operations (RIA Platforms)": "Head of Operations RIA advisory firm",
+    "Director of Operations (Wealth Management)": "Director of Operations wealth management",
+    "VP Operations (Wealth Management)": "VP Operations wealth management",
+    "Head of Operations (Wealth Management)": "Head of Operations wealth management",
     "Client Service Director": "Client Service Director wealth management",
-    "Advisor Experience Leader": "Advisor Experience RIA wealth management",
-    "Practice Management Lead": "Practice Management RIA advisory"
+    "Advisor Experience Leader": "Advisor Experience wealth management",
+    "Practice Management Lead": "Practice Management wealth management"
 }
 
 # ----------------------------
@@ -39,7 +37,7 @@ def comp_tier(label):
     return "💰 Tier 1 ($140k–$160k)"
 
 # ----------------------------
-# CONVERSION SCORE
+# CONVERSION SCORE ENGINE
 # ----------------------------
 
 def conversion_score(label):
@@ -50,7 +48,7 @@ def conversion_score(label):
         score += 3
     if "operations" in l:
         score += 2
-    if "ria" in l or "wealth" in l:
+    if "wealth" in l:
         score += 2
     if "client" in l or "advisor" in l:
         score += 1
@@ -65,23 +63,48 @@ def conversion_label(score):
     return "🟡 LOW CONVERSION"
 
 # ----------------------------
-# HYBRID JOB LAUNCHER (NEW CORE FIX)
+# HYBRID JOB LINKS (FIXED)
 # ----------------------------
 
 def job_links(query):
-    q = quote(query + " jobs")
 
-    linkedin = f"https://www.linkedin.com/jobs/search/?keywords={quote(query)}"
-    indeed = f"https://www.indeed.com/jobs?q={quote(query)}"
-    google = f"https://www.google.com/search?q={q}"
+    clean_query = query.replace("RIA", "").strip()
+
+    # LinkedIn FIX: structured + last 7 days filter
+    linkedin = (
+        "https://www.linkedin.com/jobs/search/?"
+        "keywords=" + quote(clean_query) +
+        "&f_TPR=r604800"
+    )
+
+    # Indeed fallback
+    indeed = f"https://www.indeed.com/jobs?q={quote(clean_query)}"
+
+    # Google backup
+    google = f"https://www.google.com/search?q={quote(query + ' jobs')}"
 
     return linkedin, indeed, google
+
+# ----------------------------
+# POSITIONING ENGINE (LIGHTWEIGHT BUT INTENTIONAL)
+# ----------------------------
+
+def positioning(label):
+    l = label.lower()
+
+    if "vp" in l:
+        return "Scaled ops leader bridging advisor experience + platform operations in wealth environments."
+    if "director" in l:
+        return "Operational owner focused on execution, scalability, and advisor/client service quality."
+    if "head" in l or "coo" in l:
+        return "Enterprise operator driving org design, scaling, and advisory platform transformation."
+    return "Hybrid operations + client experience leader in wealth management environments."
 
 # ----------------------------
 # UI
 # ----------------------------
 
-st.subheader("📊 Hybrid Job Launcher (Real Job Sources)")
+st.subheader("📊 Hybrid Pipeline Control (Fixed LinkedIn + Real Jobs)")
 
 for label, query in roles.items():
 
@@ -90,16 +113,23 @@ for label, query in roles.items():
     tier = comp_tier(label)
     conv = conversion_score(label)
     conv_label = conversion_label(conv)
+    position = positioning(label)
 
     st.markdown(f"### {label}")
 
     st.write(tier)
     st.write(f"🎯 Conversion Score: {conv}/7")
     st.write(conv_label)
+    st.write(f"🧠 Positioning: {position}")
 
-    st.write("🔵 [LinkedIn Jobs](" + linkedin + ")")
-    st.write("🟡 [Indeed Jobs](" + indeed + ")")
-    st.write("🟢 [Google Search](" + google + ")")
+    st.write("🔵 LinkedIn Jobs")
+    st.write(linkedin)
+
+    st.write("🟡 Indeed Jobs")
+    st.write(indeed)
+
+    st.write("🟢 Google Backup")
+    st.write(google)
 
     st.divider()
 
@@ -111,9 +141,10 @@ st.subheader("⚡ Execution Rules")
 
 st.write("""
 1. Start with 🔥 HIGH CONVERSION roles  
-2. Use LinkedIn first (highest signal for RIAs)  
-3. Use Indeed to catch smaller RIAs not on LinkedIn  
-4. Use Google only for backup discovery  
+2. Use LinkedIn first (recent postings only)  
+3. Use Indeed for coverage gaps  
+4. Use Google only for discovery fallback  
+5. Ignore low signal results — refine by firm, not keyword noise  
 """)
 
-st.success("System upgraded: direct job discovery enabled across multiple sources.")
+st.success("System stabilized: LinkedIn filtering corrected + job signal quality improved.")
