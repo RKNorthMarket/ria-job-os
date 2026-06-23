@@ -3,44 +3,34 @@ import requests
 import urllib.parse
 from collections import defaultdict
 
-st.title("🧠 RIA Executive Job OS (Hiring Intelligence Engine v10)")
+st.title("🧠 RIA Executive Job OS (Personal Fit Engine v12 — Resume Calibrated)")
 
 st.write("""
-Now includes:
+Now calibrated to YOUR background:
 
-✔ Platform RIA ingestion  
-✔ LinkedIn discovery layer  
-✔ Independent RIA discovery layer  
-✔ Hiring intelligence scoring layer (NEW)  
-✔ Firm-level hiring velocity detection  
-✔ Role concentration analytics  
+✔ RIA platform operations leadership ($350B AUM experience)  
+✔ Wealth client service + advisor operations  
+✔ Goldman Sachs + BNY Mellon + State Street experience  
+✔ onboarding, KPI systems, service model transformation  
+✔ enterprise operational risk + controls  
 
-This system identifies:
-- Where RIA firms are actively hiring Ops/Service leaders
-- Which firms are “hot”
-- Where VP/Director roles are clustering
+System now ranks jobs based on:
+- Role alignment to your experience
+- Platform + RIA ecosystem fit
+- Seniority match (Director / VP / Head)
+- Transformation + operations complexity
 """)
 
 # ----------------------------
-# 1. PLATFORM RIA UNIVERSE
+# 1. RIA ECOSYSTEM
 # ----------------------------
 
 RIA_FIRMS = [
-    "schwab",
-    "fidelity",
-    "lpl",
-    "assetmark",
-    "cetera",
-    "kestra",
-    "blackrock",
-    "wealthfront",
-    "betterment",
-    "wealthsimple",
-    "fisher",
-    "morgan stanley wealth",
-    "jpmorgan wealth",
-    "ubs wealth",
-    "raymond james"
+    "schwab", "fidelity", "lpl", "assetmark", "cetera",
+    "kestra", "blackrock", "wealthfront", "betterment",
+    "wealthsimple", "fisher",
+    "morgan stanley wealth", "jpmorgan wealth",
+    "ubs wealth", "raymond james"
 ]
 
 # ----------------------------
@@ -50,7 +40,6 @@ RIA_FIRMS = [
 def fetch_greenhouse(company):
     jobs = []
     url = f"https://boards-api.greenhouse.io/v1/boards/{company}/jobs"
-
     try:
         r = requests.get(url, timeout=5)
         if r.status_code == 200:
@@ -63,14 +52,12 @@ def fetch_greenhouse(company):
                 })
     except:
         pass
-
     return jobs
 
 
 def fetch_lever(company):
     jobs = []
     url = f"https://api.lever.co/v0/postings/{company}?mode=json"
-
     try:
         r = requests.get(url, timeout=5)
         if r.status_code == 200:
@@ -83,7 +70,6 @@ def fetch_lever(company):
                 })
     except:
         pass
-
     return jobs
 
 
@@ -95,7 +81,7 @@ def fetch_ats():
     return jobs
 
 # ----------------------------
-# 3. LINKEDIN DISCOVERY LAYER
+# 3. LINKEDIN LAYER
 # ----------------------------
 
 def linkedin_layer():
@@ -103,15 +89,13 @@ def linkedin_layer():
     titles = [
         "Director of Operations",
         "Head of Operations",
-        "Operations Director",
-        "Director of Service",
-        "Head of Service",
         "VP Operations",
-        "VP Client Service"
+        "Director of Service",
+        "Head of Service"
     ]
 
     firms = [
-        "RIA firm",
+        "RIA",
         "wealth management",
         "independent RIA",
         "family office",
@@ -119,8 +103,7 @@ def linkedin_layer():
         "Fidelity Wealth",
         "LPL Financial",
         "AssetMark",
-        "Cetera",
-        "Morgan Stanley Wealth"
+        "Cetera"
     ]
 
     results = []
@@ -146,11 +129,10 @@ def linkedin_layer():
 def independent_ria_layer():
 
     queries = [
-        "independent RIA hiring operations director",
+        "independent RIA operations director hiring",
         "wealth advisory firm client service director jobs",
-        "RIA firm $1B AUM operations hiring",
-        "family office operations leadership hiring",
-        "registered investment advisor service director jobs"
+        "RIA firm head of operations hiring",
+        "family office operations leadership jobs"
     ]
 
     results = []
@@ -172,186 +154,165 @@ def independent_ria_layer():
 # ----------------------------
 
 def fetch_all_sources():
-
     jobs = []
-
     jobs.extend(fetch_ats())
     jobs.extend(linkedin_layer())
     jobs.extend(independent_ria_layer())
-
     return jobs
 
 # ----------------------------
-# 6. 🧠 JOB SCORING ENGINE
+# 6. 🧠 BASE ROLE SCORING (MARKET FIT)
 # ----------------------------
 
-def score_job(job):
+def market_score(job):
 
     title = job["title"].lower()
     company = job["company"].lower()
-    source = job["source"]
-
-    text = title + " " + company
 
     score = 0
 
-    # ----------------------------
-    # HARD EXCLUSIONS (ATS ONLY)
-    # ----------------------------
-    if source != "linkedin_search":
+    if any(x in company for x in RIA_FIRMS):
+        score += 4
 
-        hard_block = [
-            "engineer", "software", "ios", "android",
-            "developer", "backend", "frontend",
-            "marketing", "content", "copywriter",
-            "legal", "counsel", "hr",
-            "recruiter", "payroll",
-            "accounting", "tax",
-            "teacher", "hospital", "chef",
-            "mortgage", "loan", "lending",
-            "retail banking"
-        ]
-
-        if any(x in text for x in hard_block):
-            return -999
-
-    # ----------------------------
-    # CORE ROLE SIGNALS
-    # ----------------------------
-    role_weights = {
+    signals = {
         "director": 3,
         "head": 3,
         "vp": 3,
         "operations": 2,
         "service": 2,
         "client": 2,
-        "advisor": 3,
         "wealth": 2,
-        "trading": 2,
+        "advisor": 3,
         "custody": 3,
         "clearing": 3,
-        "portfolio": 2,
-        "transition": 2,
-        "onboarding": 2
+        "onboarding": 2,
+        "transition": 2
     }
 
-    for k, v in role_weights.items():
+    for k, v in signals.items():
         if k in title:
             score += v
-
-    # ----------------------------
-    # PLATFORM SIGNAL
-    # ----------------------------
-    if any(x in company for x in RIA_FIRMS):
-        score += 4
 
     return score
 
 # ----------------------------
-# 7. HIRING INTELLIGENCE LAYER (NEW CORE)
+# 7. 🧠 PERSONAL FIT ENGINE (RESUME CALIBRATED)
 # ----------------------------
 
-def hiring_intelligence(jobs):
+def fit_score(job):
 
-    firm_counts = defaultdict(int)
-    role_focus = defaultdict(int)
+    title = job["title"].lower()
+    company = job["company"].lower()
 
-    for j in jobs:
+    score = 0
 
-        company = j["company"].lower()
-        title = j["title"].lower()
+    # ----------------------------
+    # CORE EXPERIENCE ALIGNMENT
+    # ----------------------------
 
-        firm_counts[company] += 1
+    # RIA platform ops (State Street / Goldman / BNY alignment)
+    if any(x in title for x in ["operations", "service", "client"]):
+        score += 3
 
-        if any(x in title for x in ["director", "head", "vp"]):
-            role_focus[company] += 1
+    # Strong match to your domain
+    domain_strength = {
+        "ria": 2,
+        "wealth": 2,
+        "advisor": 3,
+        "custody": 3,
+        "clearing": 3,
+        "onboarding": 3,
+        "transition": 2,
+        "kpi": 2,
+        "risk": 2,
+        "controls": 2
+    }
 
-    return firm_counts, role_focus
+    for k, v in domain_strength.items():
+        if k in title:
+            score += v
+
+    # ----------------------------
+    # SENIORITY MATCH (YOUR LEVEL)
+    # ----------------------------
+    if "vp" in title:
+        score += 5
+    if "director" in title:
+        score += 5
+    if "head" in title:
+        score += 6
+
+    # ----------------------------
+    # PLATFORM BONUS (HIGH FIT FOR YOUR EXPERIENCE)
+    # ----------------------------
+    if any(x in company for x in RIA_FIRMS):
+        score += 3
+
+    return score
 
 
-def firm_heat_score(firm_counts, role_focus):
+def fit_label(score):
 
-    heat = {}
-
-    for f in firm_counts:
-
-        total = firm_counts[f]
-        exec_roles = role_focus.get(f, 0)
-
-        score = total + (exec_roles * 2)
-
-        heat[f] = score
-
-    return heat
+    if score >= 14:
+        return "🔥 EXCELLENT FIT (HIGH PRIORITY APPLY)"
+    if score >= 11:
+        return "⚡ STRONG FIT (PRIORITY TARGET)"
+    if score >= 8:
+        return "🟡 MODERATE FIT"
+    return "🔵 LOW FIT"
 
 # ----------------------------
-# 8. FILTER
+# 8. EXECUTION
 # ----------------------------
 
-def is_relevant(job):
-    return score_job(job) >= 6
-
-# ----------------------------
-# 9. EXECUTION
-# ----------------------------
-
-st.subheader("📡 RIA Hiring Intelligence Engine")
+st.subheader("📡 RIA Executive Fit Engine (Resume-Calibrated)")
 
 jobs = fetch_all_sources()
 
-filtered = [j for j in jobs if is_relevant(j)]
-scored = [(score_job(j), j) for j in filtered if score_job(j) != -999]
+ranked = []
 
-scored.sort(reverse=True, key=lambda x: x[0])
+for j in jobs:
+
+    m = market_score(j)
+    f = fit_score(j)
+    total = m + f
+
+    if total >= 11:
+        ranked.append((total, m, f, j))
+
+ranked.sort(reverse=True, key=lambda x: x[0])
 
 # ----------------------------
-# 10. HIRING INTELLIGENCE COMPUTATION
+# 9. OUTPUT
 # ----------------------------
 
-firm_counts, role_focus = hiring_intelligence(filtered)
-heat_scores = firm_heat_score(firm_counts, role_focus)
+st.subheader("🎯 Ranked Roles (Personal Fit + Market Score)")
 
-top_firms = sorted(heat_scores.items(), key=lambda x: x[1], reverse=True)[:10]
-
-# ----------------------------
-# 11. OUTPUT — JOB FEED
-# ----------------------------
-
-st.subheader("🎯 Executive Job Feed")
-
-for s, j in scored:
+for total, m, f, j in ranked:
 
     st.markdown(f"### {j['title']}")
     st.write(f"🏢 {j['company']} ({j['source']})")
     st.write(f"🔗 {j['link']}")
-    st.write(f"🎯 Score: {s}")
+
+    st.write(f"📊 Market Score: {m}")
+    st.write(f"🧠 Fit Score: {f}")
+    st.write(f"⭐ Total Score: {total}")
+    st.write(f"🎯 Fit Rating: {fit_label(f)}")
 
     st.divider()
 
 # ----------------------------
-# 12. OUTPUT — HIRING INTELLIGENCE LAYER
-# ----------------------------
-
-st.subheader("🔥 Hiring Heat Map (Top Firms Hiring Ops Leaders)")
-
-for f, score in top_firms:
-
-    st.write(f"🏢 {f}")
-    st.write(f"🔥 Hiring Heat Score: {score}")
-
-# ----------------------------
-# 13. SYSTEM STATE
+# 10. SYSTEM STATE
 # ----------------------------
 
 st.subheader("⚡ System State")
 
 st.write("""
-✔ ATS ingestion active  
-✔ LinkedIn discovery active  
-✔ Independent RIA discovery active  
-✔ Job scoring engine active  
-✔ Hiring intelligence layer active  
-✔ Firm heat mapping enabled  
+✔ Resume-calibrated fit engine active  
+✔ RIA platform bias aligned to your experience  
+✔ VP/Director/Head weighting optimized  
+✔ Client service + onboarding + ops transformation prioritized  
+✔ Market + personal fit hybrid scoring enabled  
 """)
 
-st.success("RIA Hiring Intelligence Engine v10 active: firm-level hiring signals + executive role detection enabled.")
+st.success("RIA Personal Fit Engine v12 active: calibrated to your executive experience profile.")
