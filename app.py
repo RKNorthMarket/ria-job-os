@@ -1,40 +1,50 @@
 import streamlit as st
 import requests
+import urllib.parse
 
-st.title("🧠 RIA Executive Job OS (Balanced Intelligence Engine v7)")
+st.title("🧠 RIA Executive Job OS (Hybrid Intelligence Engine v8)")
 
 st.write("""
-This version fixes both:
-✔ Over-filtering (too few jobs)
-✔ Under-filtering (irrelevant jobs)
+This system combines:
 
-It uses:
-- Hard exclusions (non-negotiable)
-- RIA ecosystem company signals
-- Weighted role intent scoring
-- Threshold-based inclusion (balanced recall)
+✔ ATS ingestion (Greenhouse + Lever)  
+✔ LinkedIn discovery layer (search-based, not scraping)  
+✔ RIA/Wealth executive role scoring engine  
+✔ Balanced filtering (recall + precision)  
+
+Target roles:
+- Director of Operations
+- Head of Operations
+- Director of Service
+- Head of Service
+- VP Operations (Wealth / RIA)
+- Client Service Leadership (Wealth)
 """)
 
 # ----------------------------
-# 1. RIA ECOSYSTEM UNIVERSE
+# 1. RIA / WEALTH ECOSYSTEM
 # ----------------------------
 
 RIA_COMPANIES = [
-    "lpl",
     "schwab",
     "fidelity",
-    "blackrock",
+    "lpl",
     "assetmark",
     "cetera",
     "kestra",
+    "blackrock",
     "wealthfront",
     "betterment",
     "wealthsimple",
-    "fisher"
+    "fisher",
+    "morgan stanley wealth",
+    "jpmorgan wealth",
+    "ubs wealth",
+    "raymond james"
 ]
 
 # ----------------------------
-# 2. INGESTION
+# 2. ATS INGESTION LAYER
 # ----------------------------
 
 def fetch_greenhouse(company):
@@ -44,7 +54,9 @@ def fetch_greenhouse(company):
     try:
         r = requests.get(url, timeout=5)
         if r.status_code == 200:
-            for j in r.json().get("jobs", []):
+            data = r.json()
+
+            for j in data.get("jobs", []):
                 jobs.append({
                     "title": j.get("title", ""),
                     "company": company,
@@ -64,7 +76,9 @@ def fetch_lever(company):
     try:
         r = requests.get(url, timeout=5)
         if r.status_code == 200:
-            for j in r.json():
+            data = r.json()
+
+            for j in data:
                 jobs.append({
                     "title": j.get("text", ""),
                     "company": company,
@@ -79,40 +93,115 @@ def fetch_lever(company):
 
 def fetch_all_jobs():
     all_jobs = []
+
     for c in RIA_COMPANIES:
         all_jobs.extend(fetch_greenhouse(c))
         all_jobs.extend(fetch_lever(c))
+
     return all_jobs
 
 # ----------------------------
-# 3. 🧠 BALANCED CLASSIFIER (CORE FIX)
+# 3. LINKEDIN DISCOVERY LAYER (NO SCRAPING)
+# ----------------------------
+
+def linkedin_search_urls():
+
+    titles = [
+        "Director of Operations",
+        "Head of Operations",
+        "Operations Director",
+        "Director of Service",
+        "Head of Service",
+        "VP Operations",
+        "VP Client Service",
+        "Wealth Operations Director",
+        "Client Service Director"
+    ]
+
+    firms = [
+        "RIA",
+        "wealth management",
+        "registered investment advisor",
+        "LPL Financial",
+        "Charles Schwab Wealth",
+        "Fidelity Wealth",
+        "AssetMark",
+        "Cetera",
+        "Kestra",
+        "Morgan Stanley Wealth",
+        "JPMorgan Wealth Management"
+    ]
+
+    results = []
+
+    for t in titles:
+        for f in firms:
+
+            query = f"{t} {f}"
+            encoded = urllib.parse.quote(query)
+
+            url = f"https://www.linkedin.com/jobs/search/?keywords={encoded}"
+
+            results.append({
+                "title": t,
+                "company": f,
+                "link": url,
+                "source": "linkedin_search"
+            })
+
+    return results
+
+# ----------------------------
+# 4. COMBINED INGESTION
+# ----------------------------
+
+def fetch_all_sources():
+
+    jobs = []
+
+    # ATS
+    for c in RIA_COMPANIES:
+        jobs.extend(fetch_greenhouse(c))
+        jobs.extend(fetch_lever(c))
+
+    # LinkedIn discovery layer
+    jobs.extend(linkedin_search_urls())
+
+    return jobs
+
+# ----------------------------
+# 5. 🧠 BALANCED RIA ROLE SCORING ENGINE
 # ----------------------------
 
 def score_job(job):
 
     title = job["title"].lower()
     company = job["company"].lower()
+    source = job["source"]
+
     text = title + " " + company
 
-    # ----------------------------
-    # HARD EXCLUSIONS (NON-NEGOTIABLE)
-    # ----------------------------
-    hard_block = [
-        "engineer", "software", "ios", "android",
-        "developer", "backend", "frontend",
-        "marketing", "content", "copywriter",
-        "legal", "counsel", "attorney",
-        "hr", "recruiter",
-        "payroll", "accounting", "tax", "audit",
-        "teacher", "education", "hospital", "chef",
-        "mortgage", "loan", "lending",
-        "bank branch", "retail banking"
-    ]
-
-    if any(x in text for x in hard_block):
-        return -999  # immediate reject
-
     score = 0
+
+    # ----------------------------
+    # HARD EXCLUSIONS (ONLY FOR ATS DATA)
+    # ----------------------------
+    if source != "linkedin_search":
+
+        hard_block = [
+            "engineer", "software", "ios", "android",
+            "developer", "backend", "frontend",
+            "marketing", "content", "copywriter",
+            "legal", "counsel", "attorney",
+            "hr", "recruiter",
+            "payroll", "accounting", "tax", "audit",
+            "teacher", "hospital", "chef",
+            "mortgage", "loan", "lending",
+            "bank branch", "retail banking"
+        ]
+
+        if any(x in text for x in hard_block):
+            return -999
 
     # ----------------------------
     # COMPANY SIGNAL (STRONG WEIGHT)
@@ -121,23 +210,23 @@ def score_job(job):
         score += 4
 
     # ----------------------------
-    # ROLE INTENT SIGNALS (WEIGHTED, NOT REQUIRED)
+    # ROLE INTENT SIGNALS
     # ----------------------------
     role_weights = {
+        "director": 3,
+        "head": 3,
+        "vp": 3,
         "operations": 2,
-        "ops": 2,
+        "service": 2,
         "client": 2,
-        "service": 1,
-        "support": 1,
         "advisor": 3,
         "wealth": 2,
-        "trading": 3,
+        "trading": 2,
         "custody": 3,
         "clearing": 3,
         "portfolio": 2,
         "transition": 2,
-        "onboarding": 2,
-        "account": 1
+        "onboarding": 2
     }
 
     for k, v in role_weights.items():
@@ -147,36 +236,33 @@ def score_job(job):
     return score
 
 # ----------------------------
-# 4. CLASSIFICATION THRESHOLD
+# 6. FILTER THRESHOLD
 # ----------------------------
 
-def is_ria_relevant(job):
-
-    return score_job(job) >= 5
+def is_relevant(job):
+    return score_job(job) >= 6
 
 # ----------------------------
-# 5. LABELING
+# 7. LABELING
 # ----------------------------
 
 def label(score):
-
-    if score >= 8:
+    if score >= 9:
         return "🔥 HIGH MATCH"
-    elif score >= 6:
-        return "⚡ STRONG"
-    else:
-        return "🟡 WEAK BUT RELEVANT"
+    elif score >= 7:
+        return "⚡ STRONG MATCH"
+    return "🟡 MODERATE"
 
 def tier(title):
 
     t = title.lower()
 
-    if "vp" in t or "vice president" in t:
+    if "head" in t or "chief" in t:
+        return "💰 $200k–$250k+"
+    if "vp" in t:
         return "💰 $160k–$220k"
     if "director" in t:
         return "💰 $160k–$220k"
-    if "head" in t:
-        return "💰 $200k–$250k+"
     return "💰 $140k–$170k"
 
 def positioning(title):
@@ -186,33 +272,29 @@ def positioning(title):
     if "vp" in t:
         return "Senior RIA ops leader bridging advisor experience and platform execution"
     if "director" in t:
-        return "Operational owner of scalable advisor servicing workflows"
+        return "Operational leader owning advisor service delivery and scalability"
     if "head" in t:
-        return "Enterprise operator driving advisory transformation strategy"
-    return "RIA operations / client service execution role"
+        return "Enterprise operator shaping wealth operations strategy"
+    return "RIA operations execution role"
 
 # ----------------------------
-# 6. EXECUTION
+# 8. EXECUTION
 # ----------------------------
 
-st.subheader("📡 RIA Job Intelligence Feed (Balanced Mode)")
+st.subheader("📡 Hybrid RIA + LinkedIn Intelligence Feed")
 
-jobs = fetch_all_jobs()
+jobs = fetch_all_sources()
 
-scored = []
+filtered = [j for j in jobs if is_relevant(j)]
 
-for j in jobs:
-    s = score_job(j)
-    if s >= 5:
-        scored.append((s, j))
-
+scored = [(score_job(j), j) for j in filtered if score_job(j) != -999]
 scored.sort(reverse=True, key=lambda x: x[0])
 
 if not scored:
-    st.warning("No matching RIA roles found (threshold too strict or API limits).")
+    st.warning("No matching RIA roles found (check thresholds or feed freshness).")
 
 # ----------------------------
-# 7. OUTPUT
+# 9. OUTPUT
 # ----------------------------
 
 for s, j in scored:
@@ -229,17 +311,17 @@ for s, j in scored:
     st.divider()
 
 # ----------------------------
-# 8. SYSTEM STATE
+# 10. SYSTEM STATE
 # ----------------------------
 
 st.subheader("⚡ System State")
 
 st.write("""
-✔ Balanced recall + precision model active  
-✔ Hard exclusions enforced  
-✔ Weighted RIA role scoring enabled  
-✔ Company-level signal incorporated  
-✔ Threshold-based filtering (not whitelist)  
+✔ ATS ingestion active  
+✔ LinkedIn discovery layer active (search-based)  
+✔ Balanced scoring engine enabled  
+✔ Hard exclusions applied to ATS only  
+✔ RIA/Wealth executive role targeting enabled  
 """)
 
-st.success("RIA Intelligence Engine v7 active: balanced classification + realistic job recall restored.")
+st.success("RIA Hybrid Intelligence Engine v8 active: ATS + LinkedIn + scoring fusion live.")
