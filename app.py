@@ -1,57 +1,50 @@
 import streamlit as st
 import requests
 
-st.title("🧠 RIA Executive Job OS (Whitelist Intelligence Engine v6)")
+st.title("🧠 RIA Executive Job OS (Balanced Intelligence Engine v7)")
 
 st.write("""
-This system is now STRICTLY whitelist-based.
+This version fixes both:
+✔ Over-filtering (too few jobs)
+✔ Under-filtering (irrelevant jobs)
 
-✔ Only explicitly defined RIA/wealth ops roles are allowed  
-❌ Everything else is rejected by default (no keyword guessing)  
-
-This eliminates:
-- Engineering roles
-- Healthcare / education roles
-- Mortgage / banking ops
-- HR / payroll / accounting
-- Marketing / legal / product
+It uses:
+- Hard exclusions (non-negotiable)
+- RIA ecosystem company signals
+- Weighted role intent scoring
+- Threshold-based inclusion (balanced recall)
 """)
 
 # ----------------------------
-# 1. RIA FIRM DISCOVERY LAYER
+# 1. RIA ECOSYSTEM UNIVERSE
 # ----------------------------
 
-def discover_firms():
-
-    return [
-        "wealthfront",
-        "betterment",
-        "fisherinvestments",
-        "lpl",
-        "schwab",
-        "blackrock",
-        "wealthsimple",
-        "fidelity",
-        "assetmark",
-        "cetera",
-        "kestra"
-    ]
+RIA_COMPANIES = [
+    "lpl",
+    "schwab",
+    "fidelity",
+    "blackrock",
+    "assetmark",
+    "cetera",
+    "kestra",
+    "wealthfront",
+    "betterment",
+    "wealthsimple",
+    "fisher"
+]
 
 # ----------------------------
-# 2. ATS LAYER
+# 2. INGESTION
 # ----------------------------
 
 def fetch_greenhouse(company):
-
     jobs = []
     url = f"https://boards-api.greenhouse.io/v1/boards/{company}/jobs"
 
     try:
         r = requests.get(url, timeout=5)
         if r.status_code == 200:
-            data = r.json()
-
-            for j in data.get("jobs", []):
+            for j in r.json().get("jobs", []):
                 jobs.append({
                     "title": j.get("title", ""),
                     "company": company,
@@ -65,16 +58,13 @@ def fetch_greenhouse(company):
 
 
 def fetch_lever(company):
-
     jobs = []
     url = f"https://api.lever.co/v0/postings/{company}?mode=json"
 
     try:
         r = requests.get(url, timeout=5)
         if r.status_code == 200:
-            data = r.json()
-
-            for j in data:
+            for j in r.json():
                 jobs.append({
                     "title": j.get("text", ""),
                     "company": company,
@@ -86,205 +76,140 @@ def fetch_lever(company):
 
     return jobs
 
-# ----------------------------
-# 3. INGESTION
-# ----------------------------
 
 def fetch_all_jobs():
-
-    firms = discover_firms()
     all_jobs = []
-
-    for f in firms:
-        all_jobs.extend(fetch_greenhouse(f))
-        all_jobs.extend(fetch_lever(f))
-
+    for c in RIA_COMPANIES:
+        all_jobs.extend(fetch_greenhouse(c))
+        all_jobs.extend(fetch_lever(c))
     return all_jobs
 
 # ----------------------------
-# 4. 🧠 STRICT WHITELIST CLASSIFIER (CORE FIX)
+# 3. 🧠 BALANCED CLASSIFIER (CORE FIX)
 # ----------------------------
 
-def is_ria_relevant(job):
+def score_job(job):
 
     title = job["title"].lower()
     company = job["company"].lower()
     text = title + " " + company
 
     # ----------------------------
-    # STEP 1: HARD EXCLUSION (DEFAULT BLOCK EVERYTHING NON-OPS)
+    # HARD EXCLUSIONS (NON-NEGOTIABLE)
     # ----------------------------
-    hard_exclusions = [
-        "engineer",
-        "software",
-        "ios",
-        "android",
-        "backend",
-        "frontend",
-        "developer",
-        "marketing",
-        "content",
-        "copywriter",
-        "journalist",
-        "legal",
-        "counsel",
-        "attorney",
-        "hr",
-        "recruiter",
-        "talent acquisition",
-        "payroll",
-        "accounting",
-        "finance manager",
-        "tax",
-        "audit",
-        "mortgage",
-        "loan",
-        "lending",
-        "banking",
-        "branch",
-        "retail",
-        "hospital",
-        "education",
-        "teacher",
-        "chef",
-        "restaurant"
+    hard_block = [
+        "engineer", "software", "ios", "android",
+        "developer", "backend", "frontend",
+        "marketing", "content", "copywriter",
+        "legal", "counsel", "attorney",
+        "hr", "recruiter",
+        "payroll", "accounting", "tax", "audit",
+        "teacher", "education", "hospital", "chef",
+        "mortgage", "loan", "lending",
+        "bank branch", "retail banking"
     ]
 
-    if any(x in text for x in hard_exclusions):
-        return False
+    if any(x in text for x in hard_block):
+        return -999  # immediate reject
+
+    score = 0
 
     # ----------------------------
-    # STEP 2: STRICT WHITELIST ONLY (NO FUZZY MATCHING)
+    # COMPANY SIGNAL (STRONG WEIGHT)
     # ----------------------------
-    whitelist_exact_phrases = [
-        "advisor services",
-        "advisor support",
-        "financial advisor services",
-        "client service (wealth)",
-        "client services - wealth",
-        "wealth management operations",
-        "investment operations",
-        "portfolio operations",
-        "trading operations",
-        "custody operations",
-        "clearing operations",
-        "advisor onboarding",
-        "advisor transition",
-        "account opening",
-        "ria operations",
-        "advisor platform operations"
-    ]
-
-    for phrase in whitelist_exact_phrases:
-        if phrase in text:
-            return True
+    if any(x in company for x in RIA_COMPANIES):
+        score += 4
 
     # ----------------------------
-    # STEP 3: COMPANY SAFETY NET (ONLY IF TITLE IS AMBIGUOUS BUT OPS-LEANING)
+    # ROLE INTENT SIGNALS (WEIGHTED, NOT REQUIRED)
     # ----------------------------
-    ria_firms = [
-        "lpl",
-        "schwab",
-        "fidelity",
-        "blackrock",
-        "wealthfront",
-        "betterment",
-        "wealthsimple",
-        "assetmark",
-        "cetera",
-        "kestra",
-        "fisher"
-    ]
+    role_weights = {
+        "operations": 2,
+        "ops": 2,
+        "client": 2,
+        "service": 1,
+        "support": 1,
+        "advisor": 3,
+        "wealth": 2,
+        "trading": 3,
+        "custody": 3,
+        "clearing": 3,
+        "portfolio": 2,
+        "transition": 2,
+        "onboarding": 2,
+        "account": 1
+    }
 
-    company_signal = any(x in company for x in ria_firms)
+    for k, v in role_weights.items():
+        if k in title:
+            score += v
 
-    ops_hint = any(x in title for x in [
-        "operations",
-        "ops",
-        "service",
-        "support",
-        "trading",
-        "custody",
-        "clearing"
-    ])
-
-    # ONLY allow if BOTH are true
-    return company_signal and ops_hint
+    return score
 
 # ----------------------------
-# 5. SCORING ENGINE
+# 4. CLASSIFICATION THRESHOLD
 # ----------------------------
 
-def score(title):
+def is_ria_relevant(job):
 
-    t = title.lower()
-    s = 0
+    return score_job(job) >= 5
 
-    if "vp" in t or "vice president" in t:
-        s += 3
-    if "director" in t or "head" in t:
-        s += 3
-    if "operations" in t:
-        s += 2
-    if "client" in t or "advisor" in t:
-        s += 2
-    if "service" in t or "support" in t:
-        s += 1
+# ----------------------------
+# 5. LABELING
+# ----------------------------
 
-    return s
+def label(score):
+
+    if score >= 8:
+        return "🔥 HIGH MATCH"
+    elif score >= 6:
+        return "⚡ STRONG"
+    else:
+        return "🟡 WEAK BUT RELEVANT"
 
 def tier(title):
 
     t = title.lower()
 
-    if "head" in t or "chief" in t:
-        return "💰 $220k–$250k+"
-    if "vp" in t:
+    if "vp" in t or "vice president" in t:
         return "💰 $160k–$220k"
     if "director" in t:
         return "💰 $160k–$220k"
-    return "💰 $140k–$160k"
-
-def label(s):
-
-    if s >= 6:
-        return "🔥 HIGH CONVERSION"
-    if s >= 4:
-        return "⚡ MEDIUM"
-    return "🟡 LOW"
+    if "head" in t:
+        return "💰 $200k–$250k+"
+    return "💰 $140k–$170k"
 
 def positioning(title):
 
     t = title.lower()
 
     if "vp" in t:
-        return "Senior wealth ops leader bridging advisor experience + platform execution"
+        return "Senior RIA ops leader bridging advisor experience and platform execution"
     if "director" in t:
-        return "Operational owner driving scalable RIA servicing models"
+        return "Operational owner of scalable advisor servicing workflows"
     if "head" in t:
-        return "Enterprise operator shaping advisory operations strategy"
-    return "RIA operations execution role"
+        return "Enterprise operator driving advisory transformation strategy"
+    return "RIA operations / client service execution role"
 
 # ----------------------------
 # 6. EXECUTION
 # ----------------------------
 
-st.subheader("📡 RIA Ops Whitelist Feed")
+st.subheader("📡 RIA Job Intelligence Feed (Balanced Mode)")
 
 jobs = fetch_all_jobs()
 
-filtered = [j for j in jobs if is_ria_relevant(j)]
-
-if not filtered:
-    st.warning("No RIA whitelist-matching roles found.")
-
 scored = []
 
-for j in filtered:
-    s = score(j["title"])
-    scored.append((s, j))
+for j in jobs:
+    s = score_job(j)
+    if s >= 5:
+        scored.append((s, j))
 
 scored.sort(reverse=True, key=lambda x: x[0])
+
+if not scored:
+    st.warning("No matching RIA roles found (threshold too strict or API limits).")
 
 # ----------------------------
 # 7. OUTPUT
@@ -296,9 +221,9 @@ for s, j in scored:
     st.write(f"🏢 {j['company']} ({j['source']})")
     st.write(f"🔗 {j['link']}")
 
-    st.write(tier(j["title"]))
-    st.write(f"🎯 Score: {s}/7")
+    st.write(f"🎯 Score: {s}")
     st.write(label(s))
+    st.write(tier(j["title"]))
     st.write(f"🧠 Positioning: {positioning(j['title'])}")
 
     st.divider()
@@ -310,11 +235,11 @@ for s, j in scored:
 st.subheader("⚡ System State")
 
 st.write("""
-✔ Whitelist-only classification engine active  
-✔ Non-RIA domains fully excluded by default  
-✔ Engineering / marketing / legal / HR removed  
-✔ Only RIA ops roles explicitly allowed  
-✔ No fuzzy keyword matching as primary gate  
+✔ Balanced recall + precision model active  
+✔ Hard exclusions enforced  
+✔ Weighted RIA role scoring enabled  
+✔ Company-level signal incorporated  
+✔ Threshold-based filtering (not whitelist)  
 """)
 
-st.success("RIA Ops Whitelist Engine v6 active: strict allowlist classification enabled.")
+st.success("RIA Intelligence Engine v7 active: balanced classification + realistic job recall restored.")
