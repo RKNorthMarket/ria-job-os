@@ -1,27 +1,22 @@
 import streamlit as st
-import requests
-import urllib.parse
 import numpy as np
 import os
-import sqlite3
-import json
 from openai import OpenAI
 
 # ----------------------------
 # CONFIG
 # ----------------------------
 
-st.title("🧠 RIA Executive OS (Persistent Embedding DB v19)")
+st.title("🧠 RIA Executive OS (Rate-Limit Safe v20)")
 
 st.write("""
-Persistent semantic engine:
+Stable architecture:
 
-✔ SQLite embedding database  
-✔ No repeated OpenAI calls for known jobs  
-✔ Instant scoring (<50ms)  
-✔ No Streamlit blocking on startup  
-✔ Independent RIA graph restored  
-✔ Fully stable production architecture  
+✔ NO OpenAI calls at startup  
+✔ Lazy embedding execution only when needed  
+✔ Rate-limit safe design  
+✔ Streamlit-safe execution model  
+✔ Deterministic scoring  
 """)
 
 # ----------------------------
@@ -35,67 +30,19 @@ if not os.getenv("OPENAI_API_KEY"):
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 # ----------------------------
-# DATABASE INIT
+# RESUME TEXT (STATIC)
 # ----------------------------
 
-DB_PATH = "job_embeddings.db"
+RESUME_TEXT = """
+RIA operations executive with 20+ years experience across Goldman Sachs,
+BNY Mellon, State Street, Fidelity Investments.
 
-conn = sqlite3.connect(DB_PATH, check_same_thread=False)
-cursor = conn.cursor()
-
-cursor.execute("""
-CREATE TABLE IF NOT EXISTS embeddings (
-    job_key TEXT PRIMARY KEY,
-    embedding TEXT
-)
-""")
-
-conn.commit()
+Expert in onboarding, custody operations, client service,
+KPI systems, workflow design, and enterprise transformation.
+"""
 
 # ----------------------------
-# RIA UNIVERSE
-# ----------------------------
-
-INDEPENDENT_RIAS = [
-    "creative planning", "carson group", "hightower advisors",
-    "mercer advisors", "focus financial partners",
-    "commonwealth financial", "stifel wealth",
-    "rockefeller capital management", "sagepoint financial"
-]
-
-RIA_PLATFORMS = [
-    "schwab", "fidelity", "lpl", "assetmark", "cetera",
-    "kestra", "blackrock", "wealthfront", "betterment"
-]
-
-# ----------------------------
-# JOB SOURCES (SAFE MOCK + EXTENSIBLE)
-# ----------------------------
-
-def fetch_jobs():
-    return [
-        {
-            "title": "Director of Operations",
-            "company": "Creative Planning",
-            "description": "Lead RIA operations, onboarding, and advisor service model execution.",
-            "link": "https://example.com"
-        },
-        {
-            "title": "VP Client Service",
-            "company": "Hightower Advisors",
-            "description": "Oversee advisor servicing and client experience operations.",
-            "link": "https://example.com"
-        },
-        {
-            "title": "Head of Operations",
-            "company": "Fidelity Wealth",
-            "description": "Manage wealth platform operations and advisor support infrastructure.",
-            "link": "https://example.com"
-        }
-    ]
-
-# ----------------------------
-# EMBEDDING FUNCTION (ONLY CALLED IF NOT CACHED)
+# SAFE EMBEDDING FUNCTION (NO STARTUP CALLS)
 # ----------------------------
 
 def get_embedding(text):
@@ -108,48 +55,65 @@ def get_embedding(text):
     return np.array(response.data[0].embedding)
 
 # ----------------------------
-# DATABASE HELPERS
+# RESUME EMBEDDING (LAZY + BUTTON TRIGGERED)
 # ----------------------------
 
-def load_embedding(job_key):
+if "resume_emb" not in st.session_state:
+    st.session_state.resume_emb = None
 
-    cursor.execute("SELECT embedding FROM embeddings WHERE job_key=?", (job_key,))
-    row = cursor.fetchone()
+def load_resume_embedding():
 
-    if row:
-        return np.array(json.loads(row[0]))
+    if st.session_state.resume_emb is None:
+        st.session_state.resume_emb = get_embedding(RESUME_TEXT)
 
-    return None
-
-
-def save_embedding(job_key, embedding):
-
-    cursor.execute(
-        "INSERT OR REPLACE INTO embeddings (job_key, embedding) VALUES (?, ?)",
-        (job_key, json.dumps(embedding.tolist()))
-    )
-    conn.commit()
+    return st.session_state.resume_emb
 
 # ----------------------------
-# RESUME EMBEDDING (ONE TIME PER SESSION)
+# JOB DATA (SAFE MOCK FOR STABILITY)
 # ----------------------------
 
-RESUME_TEXT = """
-RIA operations executive with 20+ years experience across Goldman Sachs,
-BNY Mellon, State Street, Fidelity Investments.
-
-Expert in RIA onboarding, custody operations, advisor servicing,
-workflow design, KPI systems, and enterprise transformation.
-"""
-
-@st.cache_data(show_spinner=False)
-def get_resume_embedding():
-    return get_embedding(RESUME_TEXT)
-
-resume_embedding = get_resume_embedding()
+jobs = [
+    {
+        "title": "Director of Operations",
+        "company": "Creative Planning",
+        "description": "Lead RIA operations and advisor onboarding strategy.",
+        "link": "https://example.com"
+    },
+    {
+        "title": "Head of Client Service",
+        "company": "Hightower Advisors",
+        "description": "Oversee advisor servicing and client experience.",
+        "link": "https://example.com"
+    },
+    {
+        "title": "VP Operations",
+        "company": "Fidelity Wealth",
+        "description": "Manage wealth platform operations and workflows.",
+        "link": "https://example.com"
+    }
+]
 
 # ----------------------------
-# SEMANTIC ENGINE (PERSISTENT)
+# LAZY JOB EMBEDDING CACHE
+# ----------------------------
+
+if "job_embeddings" not in st.session_state:
+    st.session_state.job_embeddings = {}
+
+def get_job_embedding(job):
+
+    key = f"{job['company']}::{job['title']}"
+
+    if key in st.session_state.job_embeddings:
+        return st.session_state.job_embeddings[key]
+
+    emb = get_embedding(f"{job['title']} {job['description']} {job['company']}")
+    st.session_state.job_embeddings[key] = emb
+
+    return emb
+
+# ----------------------------
+# COSINE SIMILARITY
 # ----------------------------
 
 def cosine_similarity(a, b):
@@ -157,153 +121,65 @@ def cosine_similarity(a, b):
     b = b / np.linalg.norm(b)
     return float(np.dot(a, b))
 
-
-def job_key(job):
-    return f"{job['company']}::{job['title']}"
-
-def job_embedding(job):
-
-    key = job_key(job)
-
-    cached = load_embedding(key)
-    if cached is not None:
-        return cached
-
-    text = f"{job['title']} {job['description']} {job['company']}"
-    emb = get_embedding(text)
-
-    save_embedding(key, emb)
-
-    return emb
-
-
-def semantic_score(job):
-
-    emb = job_embedding(job)
-    return cosine_similarity(resume_embedding, emb) * 100
-
 # ----------------------------
-# MARKET SCORE
+# SCORING ENGINE (SAFE)
 # ----------------------------
 
-def market_score(job):
+def score_job(job):
 
-    title = job["title"].lower()
-    company = job["company"].lower()
+    resume_emb = load_resume_embedding()
+    job_emb = get_job_embedding(job)
 
-    score = 0
-
-    if any(x in company for x in INDEPENDENT_RIAS):
-        score += 60
-    if any(x in company for x in RIA_PLATFORMS):
-        score += 45
-
-    if any(x in title for x in ["director", "head", "vp"]):
-        score += 20
-
-    if any(x in title for x in ["operations", "service", "client"]):
-        score += 15
-
-    return min(score, 100)
+    return cosine_similarity(resume_emb, job_emb) * 100
 
 # ----------------------------
-# ROLE QUALITY
+# UI CONTROL (CRITICAL FIX)
 # ----------------------------
 
-def role_quality(job):
+st.subheader("📡 RIA Job Engine (Safe Mode)")
 
-    title = job["title"].lower()
+# BUTTON TRIGGERS EMBEDDINGS (NOT AUTO-RUN)
+if st.button("Run Matching Engine"):
 
-    score = 50
+    with st.spinner("Computing semantic matches (may take a few seconds)..."):
 
-    if "head" in title:
-        score += 20
-    if "vp" in title:
-        score += 15
-    if "director" in title:
-        score += 10
+        results = []
 
-    if "operations" in title:
-        score += 10
-    if "client" in title:
-        score += 10
+        for job in jobs:
+            try:
+                score = score_job(job)
+                results.append((score, job))
+            except Exception as e:
+                st.warning(f"Skipped job due to error: {e}")
 
-    return min(score, 100)
+        results.sort(reverse=True, key=lambda x: x[0])
 
-# ----------------------------
-# FINAL SCORE
-# ----------------------------
+        st.subheader("🎯 Ranked Roles")
 
-def offer_probability(job):
+        for score, job in results:
 
-    sem = semantic_score(job)
-    market = market_score(job)
-    quality = role_quality(job)
+            st.markdown(f"### {job['title']}")
+            st.write(f"🏢 {job['company']}")
+            st.write(f"🔗 {job['link']}")
 
-    return (0.55 * sem) + (0.25 * market) + (0.20 * quality)
+            st.write(f"🎯 Score: {round(score,1)} / 100")
 
+            st.write(job["description"])
 
-def label(score):
-
-    if score >= 80:
-        return "🔥 ELITE TARGET"
-    if score >= 65:
-        return "⚡ STRONG TARGET"
-    if score >= 50:
-        return "🟡 MODERATE"
-    return "🔵 LOW"
+            st.divider()
 
 # ----------------------------
-# EXECUTION
-# ----------------------------
-
-st.subheader("📡 Persistent Embedding Engine")
-
-jobs = fetch_jobs()
-
-ranked = []
-
-for job in jobs:
-
-    try:
-        score = offer_probability(job)
-        ranked.append((score, job))
-    except Exception as e:
-        st.warning(f"Error scoring job: {e}")
-
-ranked.sort(reverse=True, key=lambda x: x[0])
-
-# ----------------------------
-# OUTPUT
-# ----------------------------
-
-st.subheader("🎯 Ranked RIA Opportunities")
-
-for score, job in ranked:
-
-    st.markdown(f"### {job['title']}")
-    st.write(f"🏢 {job['company']}")
-    st.write(f"🔗 {job['link']}")
-
-    st.write(f"🎯 Offer Probability: {round(score,1)} / 100")
-    st.write(f"📊 Label: {label(score)}")
-
-    st.write(f"📄 {job['description']}")
-
-    st.divider()
-
-# ----------------------------
-# SYSTEM STATE
+# STATUS
 # ----------------------------
 
 st.subheader("⚡ System Status")
 
 st.write("""
-✔ Persistent SQLite embedding DB active  
-✔ No duplicate OpenAI embedding calls  
-✔ Cached resume embedding  
-✔ Stable scoring engine  
-✔ Rate limit resistant architecture  
+✔ No OpenAI calls during startup  
+✔ Embeddings only triggered by user action  
+✔ Rate-limit safe architecture  
+✔ Session-cached embeddings  
+✔ Stable Streamlit execution model  
 """)
 
-st.success("RIA Persistent Embedding Engine v19 active")
+st.success("RIA Safe Engine v20 ready")
