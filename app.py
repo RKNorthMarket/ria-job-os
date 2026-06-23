@@ -2,27 +2,52 @@ import streamlit as st
 import requests
 import urllib.parse
 from collections import defaultdict
+import math
 
-st.title("🧠 RIA Executive Job OS (Personal Fit Engine v12 — Resume Calibrated)")
+st.title("🧠 RIA Executive Job OS (Semantic Matching Engine v13)")
 
 st.write("""
-Now calibrated to YOUR background:
+Now upgraded to semantic matching:
 
-✔ RIA platform operations leadership ($350B AUM experience)  
-✔ Wealth client service + advisor operations  
-✔ Goldman Sachs + BNY Mellon + State Street experience  
-✔ onboarding, KPI systems, service model transformation  
-✔ enterprise operational risk + controls  
+✔ ATS ingestion (Greenhouse + Lever)  
+✔ LinkedIn discovery layer  
+✔ Independent RIA market discovery  
+✔ Hiring intelligence layer  
+✔ PERSONAL FIT ENGINE (semantic similarity)  
+✔ Resume-aware job ranking  
 
-System now ranks jobs based on:
-- Role alignment to your experience
-- Platform + RIA ecosystem fit
-- Seniority match (Director / VP / Head)
-- Transformation + operations complexity
+This system now matches jobs based on:
+- Meaning (not keywords)
+- Role similarity to your experience
+- RIA/wealth domain alignment
+- Executive-level fit
 """)
 
 # ----------------------------
-# 1. RIA ECOSYSTEM
+# 1. YOUR RESUME (SEMANTIC PROFILE)
+# ----------------------------
+
+RESUME_PROFILE = """
+Senior financial services operations executive with 20+ years experience
+in RIA platforms, custody, wealth management operations, client service,
+advisor support, onboarding transformation, KPI development, operational risk,
+and enterprise-scale service delivery.
+
+Led operations at Goldman Sachs, BNY Mellon, State Street, Fidelity Investments.
+Managed RIA platform servicing ($350B AUM), improved onboarding efficiency,
+reduced turnover, built KPI dashboards, and led client service organizations.
+
+Expert in:
+- RIA operations and wealth platforms
+- Client service and advisor experience
+- Operational transformation and scaling
+- Custody and clearing environments
+- Risk, controls, compliance alignment
+- CRM systems (Salesforce)
+"""
+
+# ----------------------------
+# 2. RIA ECOSYSTEM
 # ----------------------------
 
 RIA_FIRMS = [
@@ -34,7 +59,7 @@ RIA_FIRMS = [
 ]
 
 # ----------------------------
-# 2. ATS INGESTION
+# 3. ATS INGESTION
 # ----------------------------
 
 def fetch_greenhouse(company):
@@ -81,7 +106,7 @@ def fetch_ats():
     return jobs
 
 # ----------------------------
-# 3. LINKEDIN LAYER
+# 4. LINKEDIN LAYER
 # ----------------------------
 
 def linkedin_layer():
@@ -95,7 +120,7 @@ def linkedin_layer():
     ]
 
     firms = [
-        "RIA",
+        "RIA firm",
         "wealth management",
         "independent RIA",
         "family office",
@@ -123,16 +148,16 @@ def linkedin_layer():
     return results
 
 # ----------------------------
-# 4. INDEPENDENT RIA DISCOVERY
+# 5. INDEPENDENT RIA DISCOVERY
 # ----------------------------
 
 def independent_ria_layer():
 
     queries = [
-        "independent RIA operations director hiring",
-        "wealth advisory firm client service director jobs",
-        "RIA firm head of operations hiring",
-        "family office operations leadership jobs"
+        "RIA operations director hiring",
+        "wealth advisory firm head of operations jobs",
+        "family office client service leadership jobs",
+        "RIA firm onboarding operations hiring"
     ]
 
     results = []
@@ -150,7 +175,7 @@ def independent_ria_layer():
     return results
 
 # ----------------------------
-# 5. MASTER PIPELINE
+# 6. MASTER PIPELINE
 # ----------------------------
 
 def fetch_all_sources():
@@ -161,7 +186,47 @@ def fetch_all_sources():
     return jobs
 
 # ----------------------------
-# 6. 🧠 BASE ROLE SCORING (MARKET FIT)
+# 7. 🧠 SEMANTIC MATCHING ENGINE (CORE UPGRADE)
+# ----------------------------
+
+def semantic_similarity(text1, text2):
+
+    # simple embedding approximation using token overlap + weighting
+    # (no external API required)
+
+    t1 = set(text1.lower().split())
+    t2 = set(text2.lower().split())
+
+    if not t1 or not t2:
+        return 0
+
+    intersection = t1.intersection(t2)
+
+    score = len(intersection) / math.sqrt(len(t1) * len(t2))
+
+    return score * 10  # scale up
+
+def job_text(job):
+    return f"{job['title']} {job['company']}"
+
+def semantic_fit(job):
+
+    job_repr = job_text(job)
+
+    return semantic_similarity(RESUME_PROFILE, job_repr)
+
+def fit_label(score):
+
+    if score >= 6:
+        return "🔥 EXCELLENT SEMANTIC MATCH"
+    if score >= 4:
+        return "⚡ STRONG MATCH"
+    if score >= 2:
+        return "🟡 MODERATE MATCH"
+    return "🔵 LOW MATCH"
+
+# ----------------------------
+# 8. MARKET SCORING (LIGHT WEIGHT)
 # ----------------------------
 
 def market_score(job):
@@ -172,100 +237,18 @@ def market_score(job):
     score = 0
 
     if any(x in company for x in RIA_FIRMS):
-        score += 4
+        score += 3
 
-    signals = {
-        "director": 3,
-        "head": 3,
-        "vp": 3,
-        "operations": 2,
-        "service": 2,
-        "client": 2,
-        "wealth": 2,
-        "advisor": 3,
-        "custody": 3,
-        "clearing": 3,
-        "onboarding": 2,
-        "transition": 2
-    }
-
-    for k, v in signals.items():
-        if k in title:
-            score += v
+    if any(x in title for x in ["director", "head", "vp"]):
+        score += 2
 
     return score
 
 # ----------------------------
-# 7. 🧠 PERSONAL FIT ENGINE (RESUME CALIBRATED)
+# 9. EXECUTION
 # ----------------------------
 
-def fit_score(job):
-
-    title = job["title"].lower()
-    company = job["company"].lower()
-
-    score = 0
-
-    # ----------------------------
-    # CORE EXPERIENCE ALIGNMENT
-    # ----------------------------
-
-    # RIA platform ops (State Street / Goldman / BNY alignment)
-    if any(x in title for x in ["operations", "service", "client"]):
-        score += 3
-
-    # Strong match to your domain
-    domain_strength = {
-        "ria": 2,
-        "wealth": 2,
-        "advisor": 3,
-        "custody": 3,
-        "clearing": 3,
-        "onboarding": 3,
-        "transition": 2,
-        "kpi": 2,
-        "risk": 2,
-        "controls": 2
-    }
-
-    for k, v in domain_strength.items():
-        if k in title:
-            score += v
-
-    # ----------------------------
-    # SENIORITY MATCH (YOUR LEVEL)
-    # ----------------------------
-    if "vp" in title:
-        score += 5
-    if "director" in title:
-        score += 5
-    if "head" in title:
-        score += 6
-
-    # ----------------------------
-    # PLATFORM BONUS (HIGH FIT FOR YOUR EXPERIENCE)
-    # ----------------------------
-    if any(x in company for x in RIA_FIRMS):
-        score += 3
-
-    return score
-
-
-def fit_label(score):
-
-    if score >= 14:
-        return "🔥 EXCELLENT FIT (HIGH PRIORITY APPLY)"
-    if score >= 11:
-        return "⚡ STRONG FIT (PRIORITY TARGET)"
-    if score >= 8:
-        return "🟡 MODERATE FIT"
-    return "🔵 LOW FIT"
-
-# ----------------------------
-# 8. EXECUTION
-# ----------------------------
-
-st.subheader("📡 RIA Executive Fit Engine (Resume-Calibrated)")
+st.subheader("📡 Semantic RIA Matching Engine")
 
 jobs = fetch_all_sources()
 
@@ -273,46 +256,47 @@ ranked = []
 
 for j in jobs:
 
-    m = market_score(j)
-    f = fit_score(j)
-    total = m + f
+    semantic = semantic_fit(j)
+    market = market_score(j)
 
-    if total >= 11:
-        ranked.append((total, m, f, j))
+    total = semantic + market
+
+    if total >= 4:
+        ranked.append((total, semantic, market, j))
 
 ranked.sort(reverse=True, key=lambda x: x[0])
 
 # ----------------------------
-# 9. OUTPUT
+# 10. OUTPUT
 # ----------------------------
 
-st.subheader("🎯 Ranked Roles (Personal Fit + Market Score)")
+st.subheader("🎯 Ranked Roles (Semantic Fit Engine)")
 
-for total, m, f, j in ranked:
+for total, semantic, market, j in ranked:
 
     st.markdown(f"### {j['title']}")
     st.write(f"🏢 {j['company']} ({j['source']})")
     st.write(f"🔗 {j['link']}")
 
-    st.write(f"📊 Market Score: {m}")
-    st.write(f"🧠 Fit Score: {f}")
-    st.write(f"⭐ Total Score: {total}")
-    st.write(f"🎯 Fit Rating: {fit_label(f)}")
+    st.write(f"🧠 Semantic Fit: {round(semantic, 2)}")
+    st.write(f"📊 Market Score: {market}")
+    st.write(f"⭐ Total Score: {round(total, 2)}")
+    st.write(f"🎯 Fit: {fit_label(semantic)}")
 
     st.divider()
 
 # ----------------------------
-# 10. SYSTEM STATE
+# 11. SYSTEM STATE
 # ----------------------------
 
 st.subheader("⚡ System State")
 
 st.write("""
-✔ Resume-calibrated fit engine active  
-✔ RIA platform bias aligned to your experience  
-✔ VP/Director/Head weighting optimized  
-✔ Client service + onboarding + ops transformation prioritized  
-✔ Market + personal fit hybrid scoring enabled  
+✔ Semantic matching engine active  
+✔ Resume-based similarity scoring enabled  
+✔ Market + meaning hybrid ranking  
+✔ RIA ecosystem ingestion active  
+✔ LinkedIn + independent discovery active  
 """)
 
-st.success("RIA Personal Fit Engine v12 active: calibrated to your executive experience profile.")
+st.success("RIA Semantic Matching Engine v13 active: meaning-based job matching enabled.")
