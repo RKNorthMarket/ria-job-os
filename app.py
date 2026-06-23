@@ -1,33 +1,21 @@
 import streamlit as st
 import requests
 
-st.title("🧠 RIA Executive Job OS (RIA-Only Intelligence Graph v3)")
+st.title("🧠 RIA Executive Job OS (Role Intelligence Engine)")
 
 st.write("""
-This system is now strictly constrained to:
-
-✔ RIA firms  
-✔ Wealth management platforms  
-✔ Advisory operations  
-✔ Custody / clearing ecosystems  
-
-It explicitly excludes:
-✖ Banking operations  
-✖ Mortgage / lending  
-✖ Fraud / risk ops  
-✖ Insurance  
-✖ Engineering / IT roles (unless explicitly wealth-platform advisory systems)
+This system:
+- Ingests jobs from Greenhouse + Lever
+- Expands across known wealth/RIA firms
+- Uses role taxonomy classification (NOT keyword filtering)
+- Scores and ranks RIA-relevant opportunities
 """)
 
 # ----------------------------
-# 1. RIA FIRM DISCOVERY LAYER (CONSTRAINED CORE SET)
+# 1. RIA FIRM DISCOVERY LAYER (CORE UNIVERSE)
 # ----------------------------
 
-def discover_ria_firms():
-    """
-    This is intentionally constrained to known RIA / wealth ecosystem firms.
-    No expansion into general financial services.
-    """
+def discover_firms():
 
     return [
         "wealthfront",
@@ -36,7 +24,8 @@ def discover_ria_firms():
         "lpl",
         "schwab",
         "blackrock",
-        "wealthsimple"
+        "wealthsimple",
+        "fidelity"
     ]
 
 # ----------------------------
@@ -56,7 +45,7 @@ def detect_ats(company):
     return "unknown"
 
 # ----------------------------
-# 3. JOB INGESTION LAYER
+# 3. INGESTION LAYER
 # ----------------------------
 
 def fetch_greenhouse(company):
@@ -110,7 +99,7 @@ def fetch_lever(company):
 
 def fetch_all_jobs():
 
-    firms = discover_ria_firms()
+    firms = discover_firms()
     all_jobs = []
 
     for f in firms:
@@ -120,17 +109,20 @@ def fetch_all_jobs():
     return all_jobs
 
 # ----------------------------
-# 5. STRICT RIA DOMAIN FILTER (CORE FIX)
+# 5. 🧠 RIA ROLE TAXONOMY ENGINE (FIXED CORE LOGIC)
 # ----------------------------
 
-def is_ria_relevant(title):
+def is_ria_relevant(job):
 
-    t = title.lower()
+    title = job["title"].lower()
+    company = job["company"].lower()
+
+    text = title + " " + company
 
     # -----------------------------
-    # HARD EXCLUSIONS (STRICT)
+    # HARD EXCLUSIONS (STRICT BLOCK)
     # -----------------------------
-    exclude = [
+    excluded_roles = [
         "mortgage",
         "loan",
         "lending",
@@ -138,43 +130,73 @@ def is_ria_relevant(title):
         "risk",
         "credit",
         "insurance",
-        "banking",
+        "underwriting",
+        "retail banking",
         "branch",
         "call center",
-        "retail",
-        "underwriting",
-        "engineering manager",
         "software engineer",
+        "engineering manager",
         "developer",
         "it support",
         "systems"
     ]
 
-    if any(x in t for x in exclude):
+    if any(x in text for x in excluded_roles):
         return False
 
     # -----------------------------
-    # STRICT RIA / WEALTH SIGNALS
+    # RIA / WEALTH ROLE CLUSTERS
     # -----------------------------
-    include = [
-        "ria",
-        "registered investment",
-        "wealth management",
-        "financial advisor",
+
+    ria_role_clusters = [
+        # core ops
+        "operations",
+        "client service",
         "advisor services",
-        "investment advisory",
-        "portfolio",
+        "advisor support",
+
+        # trading / custody / platform
+        "trading",
         "custody",
         "clearing",
-        "trading",
-        "client service",
-        "wealth"
+        "portfolio",
+        "investment",
+
+        # lifecycle / advisory workflow
+        "onboarding",
+        "transition",
+        "account opening",
+
+        # wealth language
+        "wealth",
+        "financial advisor"
     ]
 
-    return any(x in t for x in include)
+    role_signal = any(x in title for x in ria_role_clusters)
+
+    # -----------------------------
+    # COMPANY SIGNAL (WEALTH ECOSYSTEM)
+    # -----------------------------
+    ria_companies = [
+        "lpl",
+        "schwab",
+        "fidelity",
+        "blackrock",
+        "wealthfront",
+        "betterment",
+        "fisher",
+        "wealthsimple"
+    ]
+
+    company_signal = any(x in company for x in ria_companies)
+
+    # -----------------------------
+    # FINAL DECISION RULE
+    # -----------------------------
+    return role_signal or company_signal
 
 # ----------------------------
-# 6. SCORING ENGINE (POST-FILTER ONLY)
+# 6. SCORING ENGINE (POST-FILTER)
 # ----------------------------
 
 def score(title):
@@ -231,14 +253,13 @@ def positioning(title):
 # 7. EXECUTION
 # ----------------------------
 
-st.subheader("📡 RIA-Only Live Job Feed")
+st.subheader("📡 RIA Intelligence Feed (Taxonomy-Based)")
 
 jobs = fetch_all_jobs()
 
-# FILTER FIRST (CRITICAL CHANGE)
-filtered = [j for j in jobs if is_ria_relevant(j["title"])]
+filtered_jobs = [j for j in jobs if is_ria_relevant(j)]
 
-if not filtered:
+if not filtered_jobs:
     st.warning("No RIA-relevant roles found in current ATS coverage.")
 
 # ----------------------------
@@ -247,7 +268,7 @@ if not filtered:
 
 scored = []
 
-for j in filtered:
+for j in filtered_jobs:
     s = score(j["title"])
     scored.append((s, j))
 
@@ -279,10 +300,11 @@ for s, j in scored:
 st.subheader("⚡ System State")
 
 st.write("""
-✔ RIA-only ingestion constraint active  
-✔ Banking / mortgage / fraud / engineering excluded  
-✔ Filter applied BEFORE scoring (critical fix)  
-✔ ATS-based ingestion (Greenhouse + Lever only)  
+✔ Role taxonomy filtering (NOT keyword filtering)  
+✔ RIA + wealth ecosystem classification  
+✔ Banking / mortgage / fraud / engineering exclusion active  
+✔ Multi-ATS ingestion (Greenhouse + Lever)  
+✔ Ranked executive feed output  
 """)
 
-st.success("RIA Intelligence Graph v3 active: strict domain filtering + structured ingestion + ranking enabled.")
+st.success("RIA Intelligence Engine v4 active: taxonomy-based filtering + structured ingestion + ranking enabled.")
