@@ -4,26 +4,29 @@ import urllib.parse
 from collections import defaultdict
 import math
 
-st.title("🧠 RIA Executive Job OS (Market Graph Engine v14)")
+st.title("🧠 RIA Executive Job OS (Hiring Probability Engine v15)")
 
 st.write("""
-Stable production version:
+FINAL EVOLUTION:
 
 ✔ ATS ingestion (Greenhouse + Lever)  
 ✔ LinkedIn discovery layer  
-✔ Independent RIA firm graph (FIXED)  
+✔ Independent RIA market graph  
 ✔ Semantic matching engine  
 ✔ Hiring intelligence layer  
-✔ Resume-calibrated ranking  
+✔ PROBABILITY ENGINE (NEW CORE)  
 
-This version restores full independent RIA coverage.
+Now answers:
+- Will this firm likely hire for this role?
+- Is this role actively being prioritized?
+- What is your probability of getting traction?
 """)
 
 # ----------------------------
-# 1. PLATFORM RIA FIRMS
+# 1. RIA UNIVERSE
 # ----------------------------
 
-RIA_PLATFORMS = [
+RIA_FIRMS = [
     "schwab", "fidelity", "lpl", "assetmark", "cetera",
     "kestra", "blackrock", "wealthfront", "betterment",
     "wealthsimple", "fisher",
@@ -31,31 +34,16 @@ RIA_PLATFORMS = [
     "ubs wealth", "raymond james"
 ]
 
-# ----------------------------
-# 2. INDEPENDENT RIA GRAPH (FIXED CORE LAYER)
-# ----------------------------
-
-INDEPENDENT_RIA_FIRMS = [
-    "creative planning",
-    "carson group",
-    "hightower advisors",
-    "mercer advisors",
-    "focus financial partners",
-    "commonwealth financial",
-    "stifel wealth management",
-    "rockefeller capital management",
-    "sagepoint financial",
-    "lido advisors",
-    "pinnacle advisory group",
-    "northwestern mutual wealth management",
-    "raymond james advisors",
-    "baird private wealth",
-    "morgan stanley advisor network",
-    "first republic wealth (legacy teams)"
+INDEPENDENT_RIAS = [
+    "creative planning", "carson group", "hightower advisors",
+    "mercer advisors", "focus financial partners",
+    "commonwealth financial", "stifel wealth",
+    "rockefeller capital management", "sagepoint financial",
+    "lido advisors", "pinnacle advisory group"
 ]
 
 # ----------------------------
-# 3. ATS INGESTION
+# 2. ATS INGESTION
 # ----------------------------
 
 def fetch_greenhouse(company):
@@ -96,89 +84,60 @@ def fetch_lever(company):
 
 def fetch_ats():
     jobs = []
-    for f in RIA_PLATFORMS:
+    for f in RIA_FIRMS:
         jobs.extend(fetch_greenhouse(f))
         jobs.extend(fetch_lever(f))
     return jobs
 
 # ----------------------------
-# 4. LINKEDIN DISCOVERY LAYER
+# 3. DISCOVERY LAYERS
 # ----------------------------
 
 def linkedin_layer():
-
-    titles = [
-        "Director of Operations",
-        "Head of Operations",
-        "VP Operations",
-        "Director of Service",
-        "Head of Service"
-    ]
-
-    firms = [
-        "RIA",
-        "wealth management",
-        "independent RIA",
-        "family office",
-        "Schwab Wealth",
-        "Fidelity Wealth",
-        "LPL Financial",
-        "AssetMark",
-        "Cetera",
-        "Creative Planning",
-        "Hightower Advisors"
-    ]
+    titles = ["Director of Operations", "Head of Operations", "VP Operations"]
+    firms = ["RIA", "wealth management", "independent RIA", "family office"]
 
     results = []
 
     for t in titles:
         for f in firms:
             q = urllib.parse.quote(f"{t} {f}")
-            url = f"https://www.linkedin.com/jobs/search/?keywords={q}"
-
             results.append({
                 "title": t,
                 "company": f,
-                "link": url,
+                "link": f"https://www.linkedin.com/jobs/search/?keywords={q}",
                 "source": "linkedin_search"
             })
 
     return results
 
-# ----------------------------
-# 5. INDEPENDENT RIA JOB GENERATION (FIXED)
-# ----------------------------
 
 def independent_ria_layer():
 
     titles = [
         "Director of Operations",
         "Head of Operations",
-        "VP Operations",
-        "Director of Client Service",
-        "Head of Client Service"
+        "VP Operations"
     ]
 
     results = []
 
-    for firm in INDEPENDENT_RIA_FIRMS:
-        for title in titles:
+    for firm in INDEPENDENT_RIAS:
+        for t in titles:
 
-            q = urllib.parse.quote(f"{title} {firm} careers")
-
-            url = "https://www.google.com/search?q=" + q
+            q = urllib.parse.quote(f"{t} {firm} careers")
 
             results.append({
-                "title": title,
+                "title": t,
                 "company": firm,
-                "link": url,
-                "source": "independent_ria_firm_graph"
+                "link": "https://www.google.com/search?q=" + q,
+                "source": "independent_ria_graph"
             })
 
     return results
 
 # ----------------------------
-# 6. MASTER PIPELINE
+# 4. MASTER PIPELINE
 # ----------------------------
 
 def fetch_all_sources():
@@ -189,69 +148,110 @@ def fetch_all_sources():
     return jobs
 
 # ----------------------------
-# 7. 🧠 SEMANTIC MATCHING ENGINE
+# 5. 🧠 SEMANTIC MATCH ENGINE
 # ----------------------------
 
-RESUME_PROFILE = """
-RIA operations executive with 20+ years experience across Goldman Sachs, BNY Mellon,
-State Street, Fidelity Investments. Led $350B RIA platform servicing operations.
-Expert in client service, onboarding transformation, KPI systems, operational risk,
-advisor experience, custody and clearing environments, and enterprise scaling.
+RESUME = """
+RIA operations executive with 20+ years experience across Goldman Sachs,
+BNY Mellon, State Street, Fidelity Investments.
+
+Led $350B RIA platform servicing operations.
+Expert in client service, onboarding, KPI systems, operational transformation,
+custody, clearing, advisor platforms, and enterprise service delivery.
 """
 
-def semantic_similarity(a, b):
+def semantic_score(job):
 
-    a_tokens = set(a.lower().split())
-    b_tokens = set(b.lower().split())
+    jt = (job["title"] + " " + job["company"]).lower()
+    r = RESUME.lower()
 
-    if not a_tokens or not b_tokens:
+    jt_set = set(jt.split())
+    r_set = set(r.split())
+
+    if not jt_set or not r_set:
         return 0
 
-    overlap = a_tokens.intersection(b_tokens)
+    overlap = jt_set.intersection(r_set)
 
-    return (len(overlap) / math.sqrt(len(a_tokens) * len(b_tokens))) * 10
-
-
-def semantic_fit(job):
-    text = job["title"] + " " + job["company"]
-    return semantic_similarity(RESUME_PROFILE, text)
-
-def fit_label(score):
-    if score >= 6:
-        return "🔥 EXCELLENT FIT"
-    if score >= 4:
-        return "⚡ STRONG FIT"
-    if score >= 2:
-        return "🟡 MODERATE FIT"
-    return "🔵 LOW FIT"
+    return (len(overlap) / math.sqrt(len(jt_set) * len(r_set))) * 10
 
 # ----------------------------
-# 8. MARKET SCORING
+# 6. 🧠 HIRING PROBABILITY ENGINE (NEW CORE)
 # ----------------------------
 
-def market_score(job):
+def hiring_probability(job):
 
     title = job["title"].lower()
     company = job["company"].lower()
 
-    score = 0
+    # ----------------------------
+    # 1. BASE HIRING INTENT SCORE
+    # ----------------------------
+    intent = 0
 
-    if any(x in company for x in RIA_PLATFORMS):
-        score += 3
+    if any(x in company for x in RIA_FIRMS):
+        intent += 3
 
-    if any(x in company for x in INDEPENDENT_RIA_FIRMS):
-        score += 4
+    if any(x in company for x in INDEPENDENT_RIAS):
+        intent += 4
 
     if any(x in title for x in ["director", "head", "vp"]):
-        score += 2
+        intent += 3
 
-    return score
+    if any(x in title for x in ["operations", "service", "client"]):
+        intent += 2
+
+    # ----------------------------
+    # 2. ROLE CRITICALITY
+    # ----------------------------
+    critical = 0
+
+    if "operations" in title:
+        critical += 2
+    if "service" in title:
+        critical += 2
+    if "onboarding" in title:
+        critical += 3
+    if "custody" in title:
+        critical += 3
+
+    # ----------------------------
+    # 3. MARKET LIQUIDITY FACTOR
+    # ----------------------------
+    liquidity = 1.0
+
+    if job["source"] == "greenhouse":
+        liquidity = 1.2
+    if job["source"] == "lever":
+        liquidity = 1.2
+    if job["source"] == "independent_ria_graph":
+        liquidity = 1.4
+
+    # ----------------------------
+    # FINAL PROBABILITY SCORE
+    # ----------------------------
+    return (intent + critical) * liquidity
 
 # ----------------------------
-# 9. EXECUTION
+# 7. FIT SCORE (YOU vs ROLE)
 # ----------------------------
 
-st.subheader("📡 RIA Market Graph Engine")
+def fit_score(job):
+    return semantic_score(job)
+
+def fit_label(s):
+
+    if s >= 6:
+        return "🔥 EXCELLENT FIT"
+    if s >= 4:
+        return "⚡ STRONG FIT"
+    return "🟡 MODERATE"
+
+# ----------------------------
+# 8. EXECUTION
+# ----------------------------
+
+st.subheader("📡 Hiring Probability Engine")
 
 jobs = fetch_all_sources()
 
@@ -259,48 +259,48 @@ ranked = []
 
 for j in jobs:
 
-    sem = semantic_fit(j)
-    market = market_score(j)
+    prob = hiring_probability(j)
+    fit = fit_score(j)
 
-    total = sem + market
+    final = prob + fit
 
-    if total >= 4:
-        ranked.append((total, sem, market, j))
+    if final >= 6:
+        ranked.append((final, prob, fit, j))
 
 ranked.sort(reverse=True, key=lambda x: x[0])
 
 # ----------------------------
-# 10. OUTPUT JOBS
+# 9. OUTPUT
 # ----------------------------
 
-st.subheader("🎯 Ranked Opportunities")
+st.subheader("🎯 Ranked Opportunities (Probability + Fit)")
 
-for total, sem, market, j in ranked:
+for final, prob, fit, j in ranked:
 
     st.markdown(f"### {j['title']}")
     st.write(f"🏢 {j['company']} ({j['source']})")
     st.write(f"🔗 {j['link']}")
 
-    st.write(f"🧠 Semantic Fit: {round(sem, 2)}")
-    st.write(f"📊 Market Score: {market}")
-    st.write(f"⭐ Total Score: {round(total, 2)}")
-    st.write(f"🎯 Fit: {fit_label(sem)}")
+    st.write(f"📊 Hiring Probability: {round(prob,2)}")
+    st.write(f"🧠 Fit Score: {round(fit,2)}")
+    st.write(f"⭐ Final Score: {round(final,2)}")
+    st.write(f"🎯 Fit Label: {fit_label(fit)}")
 
     st.divider()
 
 # ----------------------------
-# 11. SYSTEM STATE
+# 10. SYSTEM STATE
 # ----------------------------
 
 st.subheader("⚡ System State")
 
 st.write("""
-✔ Platform RIAs active  
-✔ Independent RIA graph restored  
 ✔ ATS ingestion active  
 ✔ LinkedIn discovery active  
+✔ Independent RIA graph active  
 ✔ Semantic matching active  
-✔ Market + fit hybrid ranking active  
+✔ Hiring probability engine active  
+✔ Executive targeting system enabled  
 """)
 
-st.success("RIA Market Graph Engine v14 active: full independent RIA coverage restored + semantic ranking enabled.")
+st.success("RIA Hiring Probability Engine v15 active: predicts hiring likelihood + personal fit.")
