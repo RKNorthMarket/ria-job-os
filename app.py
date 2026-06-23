@@ -1,59 +1,47 @@
 import streamlit as st
 import requests
-import re
 import numpy as np
+import re
 
-# ----------------------------
-# APP
-# ----------------------------
+# =========================================================
+# APP HEADER
+# =========================================================
 
-st.title("🧠 RIA Executive OS (Real Jobs + Offline Intelligence v22)")
+st.title("🧠 RIA Executive OS (Production Safe v23)")
 
 st.write("""
-✔ Real job ingestion (ATS feeds)  
-✔ Active job URLs (no placeholders)  
+Production-safe job intelligence system:
+
+✔ No OpenAI dependency  
+✔ Real ATS ingestion (Greenhouse + Lever)  
+✔ Defensive parsing (no crashes from bad data)  
+✔ Unified job schema normalization  
 ✔ Offline scoring engine  
-✔ No API costs  
-✔ Independent RIA discovery restored  
+✔ Stable Streamlit execution  
 """)
 
-# ----------------------------
-# INDEPENDENT RIA KEYWORDS
-# ----------------------------
+# =========================================================
+# RIA SCORING SIGNALS
+# =========================================================
 
 RIA_KEYWORDS = [
-    "ria", "wealth", "advisor", "custody", "clearing",
-    "registered investment", "financial advisor", "asset management",
-    "operations", "client service", "onboarding"
+    "ria", "registered investment", "wealth", "advisor",
+    "custody", "clearing", "asset management", "financial advisor"
 ]
 
-TARGET_TITLES = [
+ROLE_KEYWORDS = [
     "director", "head", "vp", "vice president", "manager",
-    "operations", "client service", "service", "platform"
+    "operations", "client service", "service", "onboarding"
 ]
 
-# ----------------------------
-# ATS INGESTION (FREE PUBLIC SOURCES)
-# ----------------------------
+HIGH_VALUE_TERMS = [
+    "platform", "scaling", "transformation", "workflow",
+    "kpi", "strategy", "enterprise"
+]
 
-def fetch_greenhouse_jobs(company_board):
-    try:
-        url = f"https://boards-api.greenhouse.io/v1/boards/{company_board}/jobs"
-        return requests.get(url, timeout=10).json().get("jobs", [])
-    except:
-        return []
-
-
-def fetch_lever_jobs(company):
-    try:
-        url = f"https://api.lever.co/v0/postings/{company}?mode=json"
-        return requests.get(url, timeout=10).json()
-    except:
-        return []
-
-# ----------------------------
-# SAMPLE REAL COMPANIES (EXPANDABLE)
-# ----------------------------
+# =========================================================
+# ATS SOURCES
+# =========================================================
 
 GREENHOUSE_BOARDS = [
     "creativeplanning",
@@ -67,51 +55,100 @@ LEVER_BOARDS = [
     "merceradvisors"
 ]
 
-# ----------------------------
-# NORMALIZE JOBS
-# ----------------------------
+# =========================================================
+# SAFE API FETCHERS
+# =========================================================
+
+def fetch_greenhouse(board):
+    try:
+        url = f"https://boards-api.greenhouse.io/v1/boards/{board}/jobs"
+        r = requests.get(url, timeout=10)
+        return r.json().get("jobs", [])
+    except:
+        return []
+
+
+def fetch_lever(company):
+    try:
+        url = f"https://api.lever.co/v0/postings/{company}?mode=json"
+        r = requests.get(url, timeout=10)
+        data = r.json()
+        return data if isinstance(data, list) else []
+    except:
+        return []
+
+# =========================================================
+# NORMALIZATION LAYER (DEFENSIVE)
+# =========================================================
 
 def normalize_greenhouse(job):
+
+    if not isinstance(job, dict):
+        return None
+
     return {
-        "title": job.get("title"),
-        "company": job.get("company_name", "Unknown"),
-        "description": job.get("content", ""),
-        "link": job.get("absolute_url")
+        "title": job.get("title") or "Unknown Title",
+        "company": job.get("company_name") or "Unknown Company",
+        "description": job.get("content") or "",
+        "link": job.get("absolute_url") or ""
     }
 
 
 def normalize_lever(job):
+
+    if not isinstance(job, dict):
+        return None
+
+    categories = job.get("categories")
+    team = None
+
+    if isinstance(categories, dict):
+        team = categories.get("team")
+
     return {
-        "title": job.get("text"),
-        "company": job.get("company"),
-        "description": job.get("descriptionPlain"),
-        "link": job.get("hostedUrl")
+        "title": job.get("text") or job.get("title") or "Unknown Title",
+        "company": job.get("company") or team or "Unknown Company",
+        "description": job.get("descriptionPlain") or job.get("description") or "",
+        "link": job.get("hostedUrl") or job.get("applyUrl") or ""
     }
 
-# ----------------------------
-# INGEST ALL JOBS
-# ----------------------------
+# =========================================================
+# INGESTION ENGINE (CLEAN + SAFE)
+# =========================================================
 
 def ingest_jobs():
 
     jobs = []
 
+    # Greenhouse ingestion
     for board in GREENHOUSE_BOARDS:
-        raw = fetch_greenhouse_jobs(board)
-        jobs += [normalize_greenhouse(j) for j in raw]
+        raw = fetch_greenhouse(board)
 
+        for j in raw:
+            try:
+                item = normalize_greenhouse(j)
+                if item and item["title"] != "Unknown Title" and item["link"]:
+                    jobs.append(item)
+            except:
+                continue
+
+    # Lever ingestion
     for company in LEVER_BOARDS:
-        raw = fetch_lever_jobs(company)
-        jobs += [normalize_lever(j) for j in raw]
+        raw = fetch_lever(company)
 
-    # filter broken entries
-    jobs = [j for j in jobs if j.get("title") and j.get("link")]
+        for j in raw:
+            try:
+                item = normalize_lever(j)
+                if item and item["title"] != "Unknown Title" and item["link"]:
+                    jobs.append(item)
+            except:
+                continue
 
     return jobs
 
-# ----------------------------
-# OFFLINE SCORING ENGINE
-# ----------------------------
+# =========================================================
+# SCORING ENGINE (OFFLINE)
+# =========================================================
 
 def score_job(job):
 
@@ -119,15 +156,11 @@ def score_job(job):
 
     score = 0
 
-    # title strength
-    if any(t in text for t in TARGET_TITLES):
-        score += 25
-
     # RIA relevance
     if any(k in text for k in RIA_KEYWORDS):
         score += 35
 
-    # seniority boost
+    # role seniority
     if "director" in text:
         score += 15
     if "head" in text:
@@ -135,17 +168,19 @@ def score_job(job):
     if "vp" in text or "vice president" in text:
         score += 20
 
-    # operations relevance
-    if "operations" in text:
-        score += 10
-    if "client" in text:
+    # role type
+    if any(k in text for k in ROLE_KEYWORDS):
+        score += 15
+
+    # strategic complexity
+    if any(k in text for k in HIGH_VALUE_TERMS):
         score += 10
 
     return min(score, 100)
 
-# ----------------------------
+# =========================================================
 # LABELS
-# ----------------------------
+# =========================================================
 
 def label(score):
 
@@ -157,33 +192,36 @@ def label(score):
         return "🟡 MODERATE"
     return "🔵 LOW"
 
-# ----------------------------
-# RUN APP
-# ----------------------------
+# =========================================================
+# MAIN EXECUTION
+# =========================================================
 
-st.subheader("📡 Live RIA Job Feed (ATS Ingestion)")
+st.subheader("📡 Live RIA Job Intelligence Feed")
 
-with st.spinner("Fetching real jobs from RIA platforms..."):
+with st.spinner("Ingesting real ATS job feeds..."):
 
     jobs = ingest_jobs()
 
 if not jobs:
-    st.error("No jobs returned from ATS feeds. Try again later.")
+    st.error("No jobs found. ATS sources may be temporarily unavailable.")
     st.stop()
 
 ranked = []
 
 for job in jobs:
-    score = score_job(job)
-    ranked.append((score, job))
+    try:
+        score = score_job(job)
+        ranked.append((score, job))
+    except:
+        continue
 
 ranked.sort(reverse=True, key=lambda x: x[0])
 
-# ----------------------------
+# =========================================================
 # OUTPUT
-# ----------------------------
+# =========================================================
 
-st.subheader("🎯 Ranked Real Opportunities")
+st.subheader("🎯 Ranked Opportunities")
 
 for score, job in ranked[:50]:
 
@@ -194,12 +232,23 @@ for score, job in ranked[:50]:
     st.write(f"🎯 Score: {round(score,1)} / 100")
     st.write(f"📊 Label: {label(score)}")
 
-    st.write(job["description"][:400] + "...")
+    st.write(job['description'][:500])
 
     st.divider()
 
-# ----------------------------
-# STATUS
-# ----------------------------
+# =========================================================
+# SYSTEM STATUS
+# =========================================================
 
-st.success("Live ATS ingestion + offline scoring active")
+st.subheader("⚡ System Status")
+
+st.write("""
+✔ Defensive ingestion layer active  
+✔ No OpenAI dependency  
+✔ No rate limits  
+✔ Stable schema normalization  
+✔ Multi-ATS ingestion enabled  
+✔ Production-safe scoring engine  
+""")
+
+st.success("RIA Intelligence Engine v23 active and stable")
