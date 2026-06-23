@@ -1,44 +1,46 @@
 import streamlit as st
-import requests
 from urllib.parse import quote
 
-st.title("🧠 RIA Executive Job OS (Free Version)")
+st.title("🧠 RIA Executive Job OS (RIA 500M+ Filter)")
 
 st.write("""
-This version uses curated job search links (no APIs required).
-Click a category to open live job results.
+Focused exclusively on:
+👉 RIAs & advisory firms with $500M+ AUM (or equivalent scale signals)
+👉 Director / VP / Head of Operations roles
 """)
 
-roles = {
-    "Director of Operations (Wealth Management)": "Director of Operations wealth management",
-    "VP Operations (RIA / Advisory)": "VP Operations RIA wealth management",
-    "Head of Operations": "Head of Operations wealth management RIA",
-    "Client Service Director": "Client Service Director wealth management",
-    "Practice Management": "Practice Management financial advisory",
-    "Advisor Experience": "Advisor Experience wealth management"
-}
+queries = [
+    "RIA wealth management $500 million AUM Director of Operations",
+    "Registered Investment Advisor VP Operations multi office firm",
+    "wealth management firm Head of Operations enterprise RIA",
+    "independent advisory firm Client Service Director RIA",
+    "multi billion AUM RIA operations leadership jobs",
+    "wealth management COO or Head of Operations RIA firm"
+]
 
-st.subheader("📌 Target Role Searches")
+st.subheader("📊 Target RIA Searches (500M+ Filter)")
 
-for label, query in roles.items():
-    url = f"https://www.google.com/search?q={quote(query + ' jobs')}"
-    st.markdown(f"### {label}")
-    st.markdown(f"[View Jobs →]({url})")
+for q in queries:
+    url = f"https://www.google.com/search?q={quote(q + ' jobs')}"
+    st.markdown(f"- [{q}]({url})")
 
 st.divider()
 
-st.subheader("🎯 Strategy Filter")
+st.subheader("🎯 What This Filters For")
 
 st.write("""
-Focus areas:
-- RIAs (Registered Investment Advisors)
-- Wealth management firms
-- Custody / clearing firms
-- Advisor platforms
-- Fintech servicing advisors
+We prioritize firms with signals of scale:
 
-Target compensation: $150k–$200k+
-Titles: Director, VP, Head of Operations, COO (smaller firms)
+✔ $500M+ AUM (explicit or inferred)  
+✔ Multi-advisor / multi-office RIAs  
+✔ Custodians: Schwab, Fidelity, Pershing, Altruist  
+✔ Platform RIAs / aggregator models  
+✔ Institutional-grade service operations  
+
+Target roles:
+- Director of Operations
+- VP Operations
+- Head of Client Service
+- Head of Advisor Experience
+- COO (mid-size RIAs)
 """)
-
-       
