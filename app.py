@@ -1,18 +1,21 @@
 import streamlit as st
 import requests
 
-st.title("🧠 RIA Executive Job OS (Role Intelligence Engine)")
+st.title("🧠 RIA Executive Job OS (Ops Intelligence Engine v5)")
 
 st.write("""
-This system:
-- Ingests jobs from Greenhouse + Lever
-- Expands across known wealth/RIA firms
-- Uses role taxonomy classification (NOT keyword filtering)
-- Scores and ranks RIA-relevant opportunities
+This system is now strictly a **RIA Operations Intelligence Filter**, not a general job scraper.
+
+It:
+✔ Ingests from Greenhouse + Lever  
+✔ Applies strict role-level classification  
+✔ Blocks engineering, marketing, legal, product, HR  
+✔ Only surfaces RIA/wealth operations roles  
+✔ Ranks by executive relevance  
 """)
 
 # ----------------------------
-# 1. RIA FIRM DISCOVERY LAYER (CORE UNIVERSE)
+# 1. DISCOVERY LAYER (RIA / WEALTH ECOSYSTEM)
 # ----------------------------
 
 def discover_firms():
@@ -25,17 +28,28 @@ def discover_firms():
         "schwab",
         "blackrock",
         "wealthsimple",
-        "fidelity"
+        "fidelity",
+        "assetmark",
+        "cetera"
     ]
 
 # ----------------------------
-# 2. ATS DETECTION
+# 2. ATS DETECTION (LIGHT ROUTING ONLY)
 # ----------------------------
 
 def detect_ats(company):
 
-    greenhouse = ["wealthfront", "betterment", "blackrock", "fisherinvestments"]
-    lever = ["wealthsimple"]
+    greenhouse = [
+        "wealthfront",
+        "betterment",
+        "blackrock",
+        "fisherinvestments",
+        "assetmark"
+    ]
+
+    lever = [
+        "wealthsimple"
+    ]
 
     if company in greenhouse:
         return "greenhouse"
@@ -109,7 +123,7 @@ def fetch_all_jobs():
     return all_jobs
 
 # ----------------------------
-# 5. 🧠 RIA ROLE TAXONOMY ENGINE (FIXED CORE LOGIC)
+# 5. 🧠 STRICT RIA ROLE CLASSIFICATION ENGINE (CORE FIX)
 # ----------------------------
 
 def is_ria_relevant(job):
@@ -117,65 +131,68 @@ def is_ria_relevant(job):
     title = job["title"].lower()
     company = job["company"].lower()
 
-    text = title + " " + company
-
     # -----------------------------
-    # HARD EXCLUSIONS (STRICT BLOCK)
+    # ❌ HARD EXCLUSIONS (ABSOLUTE BLOCK)
     # -----------------------------
-    excluded_roles = [
-        "mortgage",
-        "loan",
-        "lending",
-        "fraud",
-        "risk",
-        "credit",
-        "insurance",
-        "underwriting",
-        "retail banking",
-        "branch",
-        "call center",
+    blocked_roles = [
         "software engineer",
-        "engineering manager",
-        "developer",
-        "it support",
-        "systems"
+        "ios",
+        "android",
+        "backend",
+        "frontend",
+        "data engineer",
+        "devops",
+        "engineering",
+        "marketing",
+        "content",
+        "copywriter",
+        "journalist",
+        "legal",
+        "attorney",
+        "counsel",
+        "product manager",
+        "ux",
+        "designer",
+        "hr",
+        "recruiter",
+        "talent acquisition",
+        "finance manager",
+        "accounting",
+        "tax",
+        "audit"
     ]
 
-    if any(x in text for x in excluded_roles):
+    if any(x in title for x in blocked_roles):
         return False
 
     # -----------------------------
-    # RIA / WEALTH ROLE CLUSTERS
+    # ✔ RIA OPS ROLE TAXONOMY (ONLY THESE PASS)
     # -----------------------------
-
-    ria_role_clusters = [
-        # core ops
+    ria_ops_roles = [
         "operations",
         "client service",
+        "advisor",
         "advisor services",
         "advisor support",
-
-        # trading / custody / platform
+        "wealth management",
         "trading",
         "custody",
         "clearing",
         "portfolio",
-        "investment",
-
-        # lifecycle / advisory workflow
+        "investment operations",
+        "account opening",
         "onboarding",
         "transition",
-        "account opening",
-
-        # wealth language
-        "wealth",
-        "financial advisor"
+        "advisor platform",
+        "service operations",
+        "middle office",
+        "back office"
     ]
 
-    role_signal = any(x in title for x in ria_role_clusters)
+    role_match = any(x in title for x in ria_ops_roles)
 
     # -----------------------------
-    # COMPANY SIGNAL (WEALTH ECOSYSTEM)
+    # ✔ COMPANY SAFETY NET (WEALTH ECOSYSTEM)
     # -----------------------------
     ria_companies = [
         "lpl",
@@ -185,18 +202,21 @@ def is_ria_relevant(job):
         "wealthfront",
         "betterment",
         "fisher",
-        "wealthsimple"
+        "wealthsimple",
+        "assetmark",
+        "cetera",
+        "kestra"
     ]
 
-    company_signal = any(x in company for x in ria_companies)
+    company_match = any(x in company for x in ria_companies)
 
     # -----------------------------
-    # FINAL DECISION RULE
+    # FINAL DECISION
     # -----------------------------
-    return role_signal or company_signal
+    return role_match or company_match
 
 # ----------------------------
-# 6. SCORING ENGINE (POST-FILTER)
+# 6. SCORING ENGINE (POST-FILTER ONLY)
 # ----------------------------
 
 def score(title):
@@ -210,9 +230,9 @@ def score(title):
         s += 3
     if "operations" in t:
         s += 2
-    if any(x in t for x in ["wealth", "ria", "advisor", "client"]):
+    if any(x in t for x in ["advisor", "wealth", "client"]):
         s += 2
-    if any(x in t for x in ["service", "experience"]):
+    if any(x in t for x in ["service", "support"]):
         s += 1
 
     return s
@@ -244,27 +264,23 @@ def positioning(title):
     if "vp" in t:
         return "Scaled wealth ops leader bridging advisor experience + platform execution"
     if "director" in t:
-        return "Operational owner focused on execution, scalability, and advisor servicing"
+        return "Operational owner driving scalable advisor servicing models"
     if "head" in t:
-        return "Enterprise operator driving org design and advisory transformation"
-    return "Ops + client service hybrid in wealth management"
+        return "Enterprise operator shaping advisory operations strategy"
+    return "RIA operations and client service execution role"
 
 # ----------------------------
 # 7. EXECUTION
 # ----------------------------
 
-st.subheader("📡 RIA Intelligence Feed (Taxonomy-Based)")
+st.subheader("📡 RIA Operations Intelligence Feed")
 
 jobs = fetch_all_jobs()
 
 filtered_jobs = [j for j in jobs if is_ria_relevant(j)]
 
 if not filtered_jobs:
-    st.warning("No RIA-relevant roles found in current ATS coverage.")
-
-# ----------------------------
-# 8. SCORE + SORT
-# ----------------------------
+    st.warning("No RIA operations roles found in current ATS coverage.")
 
 scored = []
 
@@ -275,36 +291,34 @@ for j in filtered_jobs:
 scored.sort(reverse=True, key=lambda x: x[0])
 
 # ----------------------------
-# 9. OUTPUT
+# 8. OUTPUT
 # ----------------------------
 
 for s, j in scored:
 
-    title = j["title"]
-
-    st.markdown(f"### {title}")
+    st.markdown(f"### {j['title']}")
     st.write(f"🏢 {j['company']} ({j['source']})")
     st.write(f"🔗 {j['link']}")
 
-    st.write(tier(title))
+    st.write(tier(j["title"]))
     st.write(f"🎯 Score: {s}/7")
     st.write(label(s))
-    st.write(f"🧠 Positioning: {positioning(title)}")
+    st.write(f"🧠 Positioning: {positioning(j['title'])}")
 
     st.divider()
 
 # ----------------------------
-# 10. SYSTEM STATE
+# 9. SYSTEM STATE
 # ----------------------------
 
 st.subheader("⚡ System State")
 
 st.write("""
-✔ Role taxonomy filtering (NOT keyword filtering)  
-✔ RIA + wealth ecosystem classification  
-✔ Banking / mortgage / fraud / engineering exclusion active  
-✔ Multi-ATS ingestion (Greenhouse + Lever)  
-✔ Ranked executive feed output  
+✔ Strict RIA operations taxonomy enforced  
+✔ Engineering / marketing / legal / product fully excluded  
+✔ Company-level safety net retained  
+✔ Role-level classification is primary gate  
+✔ Post-filter scoring only  
 """)
 
-st.success("RIA Intelligence Engine v4 active: taxonomy-based filtering + structured ingestion + ranking enabled.")
+st.success("RIA Ops Intelligence Engine v5 active: strict classification + clean role filtering + ranked feed enabled.")
