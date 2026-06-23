@@ -1,46 +1,90 @@
 import streamlit as st
 from urllib.parse import quote
 
-st.title("🧠 RIA Executive Job OS (RIA 500M+ Filter)")
+st.title("🧠 RIA Executive Job OS (Scored + Execution Mode)")
 
 st.write("""
-Focused exclusively on:
-👉 RIAs & advisory firms with $500M+ AUM (or equivalent scale signals)
-👉 Director / VP / Head of Operations roles
+Targeting RIAs with $500M+ AUM and ranking roles based on fit to your background.
 """)
 
-queries = [
-    "RIA wealth management $500 million AUM Director of Operations",
-    "Registered Investment Advisor VP Operations multi office firm",
-    "wealth management firm Head of Operations enterprise RIA",
-    "independent advisory firm Client Service Director RIA",
-    "multi billion AUM RIA operations leadership jobs",
-    "wealth management COO or Head of Operations RIA firm"
-]
+# ----------------------------
+# ROLE SEARCHES
+# ----------------------------
 
-st.subheader("📊 Target RIA Searches (500M+ Filter)")
+roles = {
+    "Director of Operations (RIA / Wealth)": "Director of Operations RIA wealth management",
+    "VP Operations (Wealth Management)": "VP Operations wealth management RIA",
+    "Head of Operations (RIA Platforms)": "Head of Operations RIA advisory firm",
+    "Client Service Director": "Client Service Director wealth management",
+    "Practice Management Lead": "Practice Management RIA advisory",
+    "Advisor Experience Leader": "Advisor Experience wealth management RIA"
+}
 
-for q in queries:
-    url = f"https://www.google.com/search?q={quote(q + ' jobs')}"
-    st.markdown(f"- [{q}]({url})")
+# ----------------------------
+# FIT SCORING MODEL (STATIC)
+# ----------------------------
+
+st.subheader("📊 Your Fit Scoring Model")
+
+st.write("""
+Scoring based on your background:
+- Goldman Sachs (Ops / platform scaling)
+- State Street (wealth servicing / custody ecosystem)
+- BNY Mellon (client service leadership)
+- RIA experience (direct advisory ecosystem exposure)
+""")
+
+fit_weights = {
+    "Operations Leadership (Goldman / State Street / BNY)": 2,
+    "RIA / Advisory Experience": 2,
+    "Client Service / Advisor Experience": 2,
+    "Platform / Custody Ecosystem Exposure": 1,
+    "Scaling / Transformation Experience": 2
+}
+
+for k, v in fit_weights.items():
+    st.write(f"• {k}: +{v} points")
 
 st.divider()
 
-st.subheader("🎯 What This Filters For")
+# ----------------------------
+# JOB SEARCH + IMPLICIT SCORING
+# ----------------------------
+
+st.subheader("📌 Executive Job Search Links (500M+ RIA Filter)")
+
+for label, query in roles.items():
+
+    url = f"https://www.google.com/search?q={quote(query + ' $500M AUM jobs')}"
+    
+    st.markdown(f"### {label}")
+    st.markdown(f"[View Opportunities →]({url})")
+
+    # simple heuristic scoring display
+    if "Director" in label or "VP" in label:
+        score = "High Fit (A Tier)"
+    elif "Head" in label:
+        score = "High Fit (A Tier)"
+    else:
+        score = "Medium Fit (B Tier)"
+
+    st.write(f"**Fit Rating:** {score}")
+
+st.divider()
+
+# ----------------------------
+# EXECUTION MODE
+# ----------------------------
+
+st.subheader("⚡ Daily Execution Mode")
 
 st.write("""
-We prioritize firms with signals of scale:
+How to use this system:
 
-✔ $500M+ AUM (explicit or inferred)  
-✔ Multi-advisor / multi-office RIAs  
-✔ Custodians: Schwab, Fidelity, Pershing, Altruist  
-✔ Platform RIAs / aggregator models  
-✔ Institutional-grade service operations  
-
-Target roles:
-- Director of Operations
-- VP Operations
-- Head of Client Service
-- Head of Advisor Experience
-- COO (mid-size RIAs)
+1. Open each role category
+2. Focus on A-tier roles first
+3. Identify firms showing urgency (recent postings, multiple roles)
+4. Send for deeper evaluation or apply immediately
 """)
+
+st.success("Goal: maximize interview probability, not volume of applications.")
