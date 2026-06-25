@@ -1,9 +1,11 @@
 import requests
 from datetime import datetime
-from urllib.parse import urljoin
+from urllib.parse import urljoin, urlparse
+from bs4 import BeautifulSoup
+import re
 
 # =========================================================
-# EXPANDED RIA UNIVERSE (still seed-based but broader)
+# SEED FIRMS (ONLY BOOTSTRAP, NOT PRIMARY SOURCE)
 # =========================================================
 
 RIA_FIRMS = [
@@ -21,14 +23,10 @@ RIA_FIRMS = [
     "Wealth Enhancement Group",
     "Carson Group",
     "Captrust",
-    "Baird Private Wealth",
-    "Edelman Financial Engines",
-    "Private Advisor Group",
-    "Kestra Financial",
 ]
 
 # =========================================================
-# SAFE REQUEST
+# SAFE HTTP
 # =========================================================
 
 def safe_get(url, mode="text"):
@@ -41,19 +39,75 @@ def safe_get(url, mode="text"):
         return None
 
 # =========================================================
-# JOB SIGNAL DETECTION (STRUCTURAL ONLY)
+# JOB SIGNAL DETECTION
 # =========================================================
 
-JOB_URL_HINTS = [
-    "/job", "/jobs", "/careers", "/posting", "/position"
+JOB_KEYWORDS = [
+    "director", "vp", "vice president", "head",
+    "manager", "lead", "operations", "client",
+    "advisor", "wealth", "service",
+    "associate", "specialist", "analyst"
 ]
 
-def is_job_url(url: str) -> bool:
-    u = url.lower()
-    return any(h in u for h in JOB_URL_HINTS)
+BAD_KEYWORDS = [
+    "privacy", "cookie", "terms",
+    "contact", "about", "life at",
+    "culture", "blog", "press", "news"
+]
+
+def is_job_text(text: str) -> bool:
+    t = text.lower()
+
+    if len(text) < 6:
+        return False
+
+    if any(b in t for b in BAD_KEYWORDS):
+        return False
+
+    return any(k in t for k in JOB_KEYWORDS)
 
 # =========================================================
-# ATS INGESTION (PRIMARY SOURCE OF TRUTH)
+# SEARCH-BASED DISCOVERY LAYER (CORE UPGRADE)
+# =========================================================
+
+def discover_ria_job_pages():
+
+    """
+    Instead of relying on known firms,
+    we discover job boards via search patterns.
+    """
+
+    queries = [
+        "site:boards.greenhouse.io wealth advisor jobs",
+        "site:jobs.lever.co wealth operations",
+        "wealth management careers apply",
+        "RIA firm careers operations manager",
+        "private wealth advisor careers jobs"
+    ]
+
+    discovered_urls = set()
+
+    for q in queries:
+
+        url = f"https://www.bing.com/search?q={q}"
+        html = safe_get(url)
+
+        if not html:
+            continue
+
+        soup = BeautifulSoup(html, "html.parser")
+
+        for a in soup.find_all("a", href=True):
+
+            href = a["href"]
+
+            if any(x in href for x in ["greenhouse", "lever", "workday", "job"]):
+                discovered_urls.add(href)
+
+    return list(discovered_urls)
+
+# =========================================================
+# ATS INGESTION (TRUSTED SOURCE LAYER)
 # =========================================================
 
 def fetch_greenhouse(board):
@@ -101,51 +155,80 @@ def normalize_lever(job, board):
     }
 
 # =========================================================
-# STRICT JOB FILTER (ONLY AFTER INGESTION)
+# DOM JOB EXTRACTION (JOB-FIRST ONLY)
 # =========================================================
 
-def is_relevant_title(title: str) -> bool:
+def extract_jobs_from_page(html, base_url):
 
-    t = title.lower()
+    soup = BeautifulSoup(html, "html.parser")
+    jobs = []
 
-    keywords = [
-        "director", "vp", "vice president", "head",
-        "manager", "lead", "operations", "client",
-        "advisor", "wealth", "service",
-        "associate", "specialist", "analyst"
-    ]
+    for a in soup.find_all("a", href=True):
 
-    return any(k in t for k in keywords)
+        text = a.get_text(" ", strip=True)
 
-# =========================================================
-# CAREERS PAGE DISCOVERY (NO CONTENT SCRAPING)
-# =========================================================
+        if not is_job_text(text):
+            continue
 
-def get_careers_page(firm):
+        jobs.append({
+            "title": text,
+            "company": infer_company_from_url(base_url),
+            "description": "discovered job",
+            "link": urljoin(base_url, a["href"]),
+            "source": "discovery",
+            "date": datetime.now().strftime("%Y-%m-%d")
+        })
 
-    slug = firm.lower().replace(" ", "")
-    return f"https://www.{slug}.com/careers"
-
-def fetch_careers_links(firm):
-
-    url = get_careers_page(firm)
-
-    html = safe_get(url, "text")
-
-    if not html:
-        return []
-
-    # ONLY extract job-like URLs (not page text)
-    links = []
-
-    for part in html.split('"'):
-        if is_job_url(part):
-            links.append(urljoin(url, part))
-
-    return links
+    return jobs
 
 # =========================================================
-# MASTER ENGINE
+# COMPANY INFERENCE (IMPORTANT FOR UNKNOWN RIAs)
+# =========================================================
+
+def infer_company_from_url(url: str):
+
+    try:
+        domain = urlparse(url).netloc
+        return domain.replace("www.", "")
+    except:
+        return "Unknown RIA"
+
+# =========================================================
+# SEARCH-DISCOVERED JOB SCRAPING
+# =========================================================
+
+def process_discovered_urls(urls):
+
+    jobs = []
+
+    for url in urls:
+
+        html = safe_get(url)
+
+        if not html:
+            continue
+
+        jobs.extend(extract_jobs_from_page(html, url))
+
+    return jobs
+
+# =========================================================
+# SEED FALLBACK (ONLY SAFETY NET)
+# =========================================================
+
+def fallback_jobs():
+
+    return [{
+        "title": "Director of Operations",
+        "company": "RIA Market System",
+        "description": "Fallback system job",
+        "link": "N/A",
+        "source": "fallback",
+        "date": datetime.now().strftime("%Y-%m-%d")
+    }]
+
+# =========================================================
+# MASTER ENGINE (DISCOVERY-FIRST ARCHITECTURE)
 # =========================================================
 
 def get_live_jobs():
@@ -153,7 +236,7 @@ def get_live_jobs():
     jobs = []
 
     # -------------------------
-    # ATS LAYER (PRIMARY)
+    # 1. ATS INGESTION (HIGH SIGNAL)
     # -------------------------
     for firm in RIA_FIRMS:
 
@@ -170,47 +253,26 @@ def get_live_jobs():
                 jobs.append(job)
 
     # -------------------------
-    # CAREER PAGE LAYER (STRUCTURED ONLY)
+    # 2. SEARCH DISCOVERY LAYER (NEW CORE)
     # -------------------------
-    for firm in RIA_FIRMS:
-
-        links = fetch_careers_links(firm)
-
-        for link in links:
-
-            title = link.split("/")[-1].replace("-", " ").title()
-
-            if is_relevant_title(title):
-                jobs.append({
-                    "title": title,
-                    "company": firm,
-                    "description": "Structured careers link job",
-                    "link": link,
-                    "source": "discovered",
-                    "date": datetime.now().strftime("%Y-%m-%d")
-                })
+    discovered_urls = discover_ria_job_pages()
+    jobs.extend(process_discovered_urls(discovered_urls))
 
     # -------------------------
-    # FINAL SAFETY
+    # 3. FINAL SAFETY
     # -------------------------
     if not jobs:
-        return [{
-            "title": "Director of Operations",
-            "company": "RIA Market System",
-            "description": "Fallback safety job",
-            "link": "N/A",
-            "source": "fallback",
-            "date": datetime.now().strftime("%Y-%m-%d")
-        }]
+        return fallback_jobs()
 
     # -------------------------
-    # DEDUP
+    # 4. DEDUP
     # -------------------------
     seen = set()
     cleaned = []
 
     for j in jobs:
         key = (j["title"], j["company"])
+
         if key not in seen:
             seen.add(key)
             cleaned.append(j)
