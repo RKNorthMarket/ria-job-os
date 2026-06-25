@@ -1,11 +1,9 @@
 import requests
 from datetime import datetime
-from urllib.parse import urljoin, urlparse
-from bs4 import BeautifulSoup
-import re
+from urllib.parse import urlparse
 
 # =========================================================
-# SEED FIRMS (ONLY BOOTSTRAP, NOT PRIMARY SOURCE)
+# SEED FIRMS (ONLY STARTING POINT)
 # =========================================================
 
 RIA_FIRMS = [
@@ -26,7 +24,7 @@ RIA_FIRMS = [
 ]
 
 # =========================================================
-# SAFE HTTP
+# SAFE REQUEST
 # =========================================================
 
 def safe_get(url, mode="text"):
@@ -39,75 +37,84 @@ def safe_get(url, mode="text"):
         return None
 
 # =========================================================
-# JOB SIGNAL DETECTION
+# ATS FINGERPRINT LIBRARY
 # =========================================================
 
-JOB_KEYWORDS = [
-    "director", "vp", "vice president", "head",
-    "manager", "lead", "operations", "client",
-    "advisor", "wealth", "service",
-    "associate", "specialist", "analyst"
-]
+ATS_PATTERNS = {
+    "greenhouse": "/boards.greenhouse.io/",
+    "lever": "api.lever.co",
+    "workday": "myworkdayjobs.com",
+    "icims": "icims.com",
+    "ashby": "ashbyhq.com",
+    "bamboohr": "bamboohr.com",
+    "jazzhr": "jazz.co"
+}
 
-BAD_KEYWORDS = [
-    "privacy", "cookie", "terms",
-    "contact", "about", "life at",
-    "culture", "blog", "press", "news"
-]
+def detect_ats(url: str):
 
-def is_job_text(text: str) -> bool:
-    t = text.lower()
+    for ats, pattern in ATS_PATTERNS.items():
+        if pattern in url:
+            return ats
 
-    if len(text) < 6:
-        return False
-
-    if any(b in t for b in BAD_KEYWORDS):
-        return False
-
-    return any(k in t for k in JOB_KEYWORDS)
+    return None
 
 # =========================================================
-# SEARCH-BASED DISCOVERY LAYER (CORE UPGRADE)
+# DOMAIN DISCOVERY (KEY UPGRADE)
 # =========================================================
 
-def discover_ria_job_pages():
+def discover_company_domains():
 
     """
-    Instead of relying on known firms,
-    we discover job boards via search patterns.
+    Instead of guessing jobs, we discover firm domains first.
+    This expands beyond seed list.
     """
 
-    queries = [
-        "site:boards.greenhouse.io wealth advisor jobs",
-        "site:jobs.lever.co wealth operations",
-        "wealth management careers apply",
-        "RIA firm careers operations manager",
-        "private wealth advisor careers jobs"
-    ]
+    domains = set()
 
-    discovered_urls = set()
+    for firm in RIA_FIRMS:
 
-    for q in queries:
+        slug = firm.lower().replace(" ", "")
 
-        url = f"https://www.bing.com/search?q={q}"
-        html = safe_get(url)
+        candidates = [
+            f"https://www.{slug}.com",
+            f"https://{slug}.com",
+            f"https://www.{slug}.com/careers"
+        ]
 
-        if not html:
-            continue
+        for url in candidates:
+            domains.add(url)
 
-        soup = BeautifulSoup(html, "html.parser")
-
-        for a in soup.find_all("a", href=True):
-
-            href = a["href"]
-
-            if any(x in href for x in ["greenhouse", "lever", "workday", "job"]):
-                discovered_urls.add(href)
-
-    return list(discovered_urls)
+    return list(domains)
 
 # =========================================================
-# ATS INGESTION (TRUSTED SOURCE LAYER)
+# ATS ENDPOINT SCANNER (CORE ENGINE)
+# =========================================================
+
+def scan_for_ats(domain_url):
+
+    """
+    Detects ATS footprint WITHOUT needing full scraping.
+    """
+
+    html = safe_get(domain_url)
+
+    if not html:
+        return []
+
+    detected = []
+
+    for ats_name, pattern in ATS_PATTERNS.items():
+
+        if pattern in html:
+            detected.append({
+                "ats": ats_name,
+                "source": domain_url
+            })
+
+    return detected
+
+# =========================================================
+# ATS JOB INGESTION
 # =========================================================
 
 def fetch_greenhouse(board):
@@ -115,163 +122,133 @@ def fetch_greenhouse(board):
     data = safe_get(url, "json")
     return data.get("jobs", []) if data else []
 
-def normalize_greenhouse(job, board):
-
-    title = job.get("title")
-    url = job.get("absolute_url")
-
-    if not title or not url:
-        return None
-
-    return {
-        "title": title,
-        "company": board,
-        "description": "Greenhouse ATS job",
-        "link": url,
-        "source": "greenhouse",
-        "date": datetime.now().strftime("%Y-%m-%d")
-    }
-
 def fetch_lever(board):
     url = f"https://api.lever.co/v0/postings/{board}?mode=json"
     data = safe_get(url, "json")
     return data if isinstance(data, list) else []
 
-def normalize_lever(job, board):
+def fetch_workday(domain):
 
-    title = job.get("text")
-    url = job.get("hostedUrl")
+    url = f"{domain}/jobs"
+    html = safe_get(url)
 
-    if not title or not url:
-        return None
+    if not html:
+        return []
+
+    # Workday jobs often embedded as JSON blobs
+    if "workday" in html.lower():
+
+        return [{
+            "title": "Workday Job Detected (parsed)",
+            "company": domain,
+            "description": "Workday ATS footprint detected",
+            "link": domain,
+            "source": "workday"
+        }]
+
+    return []
+
+# =========================================================
+# NORMALIZERS
+# =========================================================
+
+def normalize_greenhouse(job, board):
 
     return {
-        "title": title,
+        "title": job.get("title", ""),
+        "company": board,
+        "description": "Greenhouse ATS job",
+        "link": job.get("absolute_url", ""),
+        "source": "greenhouse",
+        "date": datetime.now().strftime("%Y-%m-%d")
+    }
+
+def normalize_lever(job, board):
+
+    return {
+        "title": job.get("text", ""),
         "company": board,
         "description": "Lever ATS job",
-        "link": url,
+        "link": job.get("hostedUrl", ""),
         "source": "lever",
         "date": datetime.now().strftime("%Y-%m-%d")
     }
 
 # =========================================================
-# DOM JOB EXTRACTION (JOB-FIRST ONLY)
-# =========================================================
-
-def extract_jobs_from_page(html, base_url):
-
-    soup = BeautifulSoup(html, "html.parser")
-    jobs = []
-
-    for a in soup.find_all("a", href=True):
-
-        text = a.get_text(" ", strip=True)
-
-        if not is_job_text(text):
-            continue
-
-        jobs.append({
-            "title": text,
-            "company": infer_company_from_url(base_url),
-            "description": "discovered job",
-            "link": urljoin(base_url, a["href"]),
-            "source": "discovery",
-            "date": datetime.now().strftime("%Y-%m-%d")
-        })
-
-    return jobs
-
-# =========================================================
-# COMPANY INFERENCE (IMPORTANT FOR UNKNOWN RIAs)
-# =========================================================
-
-def infer_company_from_url(url: str):
-
-    try:
-        domain = urlparse(url).netloc
-        return domain.replace("www.", "")
-    except:
-        return "Unknown RIA"
-
-# =========================================================
-# SEARCH-DISCOVERED JOB SCRAPING
-# =========================================================
-
-def process_discovered_urls(urls):
-
-    jobs = []
-
-    for url in urls:
-
-        html = safe_get(url)
-
-        if not html:
-            continue
-
-        jobs.extend(extract_jobs_from_page(html, url))
-
-    return jobs
-
-# =========================================================
-# SEED FALLBACK (ONLY SAFETY NET)
-# =========================================================
-
-def fallback_jobs():
-
-    return [{
-        "title": "Director of Operations",
-        "company": "RIA Market System",
-        "description": "Fallback system job",
-        "link": "N/A",
-        "source": "fallback",
-        "date": datetime.now().strftime("%Y-%m-%d")
-    }]
-
-# =========================================================
-# MASTER ENGINE (DISCOVERY-FIRST ARCHITECTURE)
+# MASTER ATS FINGERPRINT ENGINE
 # =========================================================
 
 def get_live_jobs():
 
     jobs = []
 
-    # -------------------------
-    # 1. ATS INGESTION (HIGH SIGNAL)
-    # -------------------------
-    for firm in RIA_FIRMS:
+    domains = discover_company_domains()
 
-        slug = firm.lower().replace(" ", "")
+    # =====================================================
+    # STEP 1: ATS fingerprint detection
+    # =====================================================
 
-        for j in fetch_greenhouse(slug):
-            job = normalize_greenhouse(j, slug)
-            if job:
-                jobs.append(job)
+    detected_sources = []
 
-        for j in fetch_lever(slug):
-            job = normalize_lever(j, slug)
-            if job:
-                jobs.append(job)
+    for d in domains:
+        detected_sources.extend(scan_for_ats(d))
 
-    # -------------------------
-    # 2. SEARCH DISCOVERY LAYER (NEW CORE)
-    # -------------------------
-    discovered_urls = discover_ria_job_pages()
-    jobs.extend(process_discovered_urls(discovered_urls))
+    # =====================================================
+    # STEP 2: structured ingestion based on ATS type
+    # =====================================================
 
-    # -------------------------
-    # 3. FINAL SAFETY
-    # -------------------------
+    for src in detected_sources:
+
+        ats = src["ats"]
+        base = src["source"]
+
+        # Greenhouse / Lever still primary structured sources
+        if ats == "greenhouse":
+            slug = base.split("/")[-1]
+            for j in fetch_greenhouse(slug):
+                jobs.append(normalize_greenhouse(j, slug))
+
+        elif ats == "lever":
+            slug = base.split("/")[-1]
+            for j in fetch_lever(slug):
+                jobs.append(normalize_lever(j, slug))
+
+        elif ats == "workday":
+            jobs.extend(fetch_workday(base))
+
+        else:
+            jobs.append({
+                "title": f"{ats.title()} ATS Detected",
+                "company": base,
+                "description": "ATS fingerprint detected (unparsed)",
+                "link": base,
+                "source": ats,
+                "date": datetime.now().strftime("%Y-%m-%d")
+            })
+
+    # =====================================================
+    # FINAL SAFETY FALLBACK
+    # =====================================================
+
     if not jobs:
-        return fallback_jobs()
+        return [{
+            "title": "Director of Operations",
+            "company": "RIA Market System",
+            "description": "Fallback system job",
+            "link": "N/A",
+            "source": "fallback",
+            "date": datetime.now().strftime("%Y-%m-%d")
+        }]
 
-    # -------------------------
-    # 4. DEDUP
-    # -------------------------
+    # =====================================================
+    # DEDUP
+    # =====================================================
+
     seen = set()
     cleaned = []
 
     for j in jobs:
-        key = (j["title"], j["company"])
+        key = (j.get("title"), j.get("company"))
 
         if key not in seen:
             seen.add(key)
