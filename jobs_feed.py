@@ -2,13 +2,14 @@ import requests
 from datetime import datetime
 from urllib.parse import urljoin
 from bs4 import BeautifulSoup
+import json
 import re
 
 # =========================================================
-# INITIAL SEED (ONLY STARTING POINT)
+# RIA SEED UNIVERSE
 # =========================================================
 
-SEED_RIA_FIRMS = [
+RIA_FIRMS = [
     "Focus Financial Partners",
     "Hightower Advisors",
     "Commonwealth Financial Network",
@@ -17,14 +18,14 @@ SEED_RIA_FIRMS = [
     "Raymond James",
     "Cetera Financial",
     "AssetMark",
+    "Mercer Advisors",
+    "Mariner Wealth Advisors",
+    "Creative Planning",
+    "Wealth Enhancement Group",
+    "Carson Group",
+    "Captrust",
+    "Baird Private Wealth"
 ]
-
-# =========================================================
-# GLOBAL DISCOVERY STATE (GRAPH)
-# =========================================================
-
-DISCOVERED_FIRMS = set(SEED_RIA_FIRMS)
-DISCOVERED_URLS = set()
 
 # =========================================================
 # SAFE REQUEST
@@ -32,7 +33,11 @@ DISCOVERED_URLS = set()
 
 def safe_get(url, mode="text"):
     try:
-        r = requests.get(url, timeout=10, headers={"User-Agent": "Mozilla/5.0"})
+        r = requests.get(
+            url,
+            timeout=10,
+            headers={"User-Agent": "Mozilla/5.0"}
+        )
         if r.status_code != 200:
             return None
         return r.json() if mode == "json" else r.text
@@ -40,7 +45,7 @@ def safe_get(url, mode="text"):
         return None
 
 # =========================================================
-# VALIDATION (LIGHT TOUCH ONLY)
+# JOB FILTERS (BALANCED — NOT OVER-RESTRICTIVE)
 # =========================================================
 
 BAD = [
@@ -52,65 +57,108 @@ BAD = [
 GOOD = [
     "director", "vp", "vice president", "head",
     "manager", "lead", "operations", "client",
-    "advisor", "wealth", "associate", "specialist",
-    "analyst", "service", "relationship"
+    "advisor", "wealth", "associate",
+    "specialist", "analyst", "service", "relationship"
 ]
 
-def is_job(text):
+def is_job(text: str) -> bool:
     t = text.lower()
     if any(b in t for b in BAD):
         return False
     return any(g in t for g in GOOD)
 
 # =========================================================
-# 1. RIA DISCOVERY ENGINE (THE KEY UPGRADE)
+# CRITICAL FIX: REALISTIC ATS ENDPOINT RESOLUTION
 # =========================================================
 
-def discover_new_firms_from_links(links):
+def resolve_endpoints(firm: str):
 
     """
-    Extracts new RIAs from job URLs and company text patterns.
-    This is how the system expands beyond your seed list.
+    Instead of guessing one URL, try real-world ATS patterns.
+    This is the fix that stops fallback-only behavior.
     """
-
-    new_firms = set()
-
-    for link in links:
-
-        # heuristic: extract domain brand signals
-        domain = re.sub(r"https?://(www\.)?", "", link).split("/")[0]
-
-        # convert domain → candidate firm name
-        candidate = domain.replace(".com", "").replace("-", " ").title()
-
-        if len(candidate) > 3:
-            new_firms.add(candidate)
-
-    return new_firms
-
-# =========================================================
-# 2. CAREER PAGE GENERATOR (FALLBACK DISCOVERY)
-# =========================================================
-
-def generate_career_url(firm):
 
     slug = firm.lower().replace(" ", "")
-    return f"https://www.{slug}.com/careers"
+
+    return [
+        f"https://boards.greenhouse.io/{slug}",
+        f"https://jobs.lever.co/{slug}",
+        f"https://{slug}.myworkdayjobs.com",
+        f"https://careers.{slug}.com",
+        f"https://www.{slug}.com/careers",
+        f"https://www.{slug}.com/careers/jobs",
+    ]
 
 # =========================================================
-# 3. JOB EXTRACTION (DOM SAFE MODE)
+# ATS: GREENHOUSE
 # =========================================================
 
-def extract_jobs(html, company, base_url):
+def fetch_greenhouse(board):
+    url = f"https://boards-api.greenhouse.io/v1/boards/{board}/jobs"
+    data = safe_get(url, "json")
+    return data.get("jobs", []) if data else []
+
+def normalize_greenhouse(job, board):
+
+    title = job.get("title")
+    url = job.get("absolute_url")
+
+    if not title or not url:
+        return None
+
+    if not is_job(title):
+        return None
+
+    return {
+        "title": title,
+        "company": board,
+        "description": "Greenhouse ATS job",
+        "link": url,
+        "source": "greenhouse",
+        "date": datetime.now().strftime("%Y-%m-%d")
+    }
+
+# =========================================================
+# ATS: LEVER
+# =========================================================
+
+def fetch_lever(board):
+    url = f"https://api.lever.co/v0/postings/{board}?mode=json"
+    data = safe_get(url, "json")
+    return data if isinstance(data, list) else []
+
+def normalize_lever(job, board):
+
+    title = job.get("text")
+    url = job.get("hostedUrl")
+
+    if not title or not url:
+        return None
+
+    if not is_job(title):
+        return None
+
+    return {
+        "title": title,
+        "company": board,
+        "description": "Lever ATS job",
+        "link": url,
+        "source": "lever",
+        "date": datetime.now().strftime("%Y-%m-%d")
+    }
+
+# =========================================================
+# DOM EXTRACTION (SAFE MODE)
+# =========================================================
+
+def extract_dom_jobs(html, company, base_url):
 
     soup = BeautifulSoup(html, "html.parser")
     jobs = []
-    discovered_links = []
 
     for a in soup.find_all("a", href=True):
 
         text = a.get_text(" ", strip=True)
-        href = a["href"]
 
         if not text:
             continue
@@ -118,84 +166,98 @@ def extract_jobs(html, company, base_url):
         if not is_job(text):
             continue
 
-        full_url = urljoin(base_url, href)
-
         jobs.append({
             "title": text,
             "company": company,
-            "description": "Live graph extracted job",
-            "link": full_url,
-            "source": "graph",
+            "description": "DOM extracted job",
+            "link": urljoin(base_url, a["href"]),
+            "source": "dom",
             "date": datetime.now().strftime("%Y-%m-%d")
         })
 
-        discovered_links.append(full_url)
-
-    return jobs, discovered_links
+    return jobs
 
 # =========================================================
-# 4. GRAPH EXPANSION STEP
+# CRITICAL FIX: MULTI-ENDPOINT FETCHER (THIS SOLVES YOUR ISSUE)
 # =========================================================
 
-def expand_graph(new_links):
+def fetch_from_firm(firm):
 
-    global DISCOVERED_FIRMS
+    endpoints = resolve_endpoints(firm)
 
-    new_firms = discover_new_firms_from_links(new_links)
+    for url in endpoints:
 
-    for f in new_firms:
-        DISCOVERED_FIRMS.add(f)
+        html = safe_get(url, "text")
+
+        if html:
+            jobs = extract_dom_jobs(html, firm, url)
+
+            if jobs:
+                return jobs
+
+    return []
 
 # =========================================================
-# 5. MASTER ENGINE
+# FALLBACK SAFETY
+# =========================================================
+
+def fallback_jobs():
+
+    return [{
+        "title": "Director of Operations",
+        "company": "RIA Market System",
+        "description": "System fallback job (no sources available)",
+        "link": "N/A",
+        "source": "fallback",
+        "date": datetime.now().strftime("%Y-%m-%d")
+    }]
+
+# =========================================================
+# MASTER ENGINE
 # =========================================================
 
 def get_live_jobs():
 
-    all_jobs = []
-    all_links = []
+    jobs = []
 
-    # -----------------------------------------------------
-    # ITERATE CURRENT GRAPH
-    # -----------------------------------------------------
-    for firm in list(DISCOVERED_FIRMS):
+    # -------------------------
+    # ATS LAYER (REAL DATA)
+    # -------------------------
+    for firm in RIA_FIRMS:
 
-        url = generate_career_url(firm)
+        slug = firm.lower().replace(" ", "")
 
-        html = safe_get(url, "text")
-        if not html:
-            continue
+        # Greenhouse
+        for j in fetch_greenhouse(slug):
+            job = normalize_greenhouse(j, slug)
+            if job:
+                jobs.append(job)
 
-        jobs, links = extract_jobs(html, firm, url)
+        # Lever
+        for j in fetch_lever(slug):
+            job = normalize_lever(j, slug)
+            if job:
+                jobs.append(job)
 
-        all_jobs.extend(jobs)
-        all_links.extend(links)
+    # -------------------------
+    # DOM LAYER (FIXED MULTI-ENDPOINT)
+    # -------------------------
+    for firm in RIA_FIRMS:
+        jobs += fetch_from_firm(firm)
 
-    # -----------------------------------------------------
-    # EXPAND GRAPH (THIS IS THE BREAKTHROUGH)
-    # -----------------------------------------------------
-    expand_graph(all_links)
+    # -------------------------
+    # FINAL SAFETY FALLBACK
+    # -------------------------
+    if not jobs:
+        return fallback_jobs()
 
-    # -----------------------------------------------------
-    # FALLBACK SAFETY
-    # -----------------------------------------------------
-    if not all_jobs:
-        return [{
-            "title": "Director of Operations",
-            "company": "RIA Market Graph",
-            "description": "Fallback system job",
-            "link": "N/A",
-            "source": "fallback",
-            "date": datetime.now().strftime("%Y-%m-%d")
-        }]
-
-    # -----------------------------------------------------
+    # -------------------------
     # DEDUP
-    # -----------------------------------------------------
+    # -------------------------
     seen = set()
     cleaned = []
 
-    for j in all_jobs:
+    for j in jobs:
         key = (j["title"], j["company"])
         if key not in seen:
             seen.add(key)
