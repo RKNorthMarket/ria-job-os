@@ -1,118 +1,84 @@
 import requests
-from bs4 import BeautifulSoup
-from urllib.parse import urljoin, urlparse
 from datetime import datetime
 
 # =========================================================
-# JOB SURFACE DISCOVERY QUERIES
+# DIRECT ATS ENTRY POINTS (NO SEARCH ENGINES)
 # =========================================================
 
-QUERIES = [
-    "wealth management operations jobs",
-    "RIA client service manager jobs",
-    "site:lever.co wealth management",
-    "site:boards.greenhouse.io advisor operations",
-    "financial services operations careers",
+GREENHOUSE_BOARDS = [
+    "hightoweradvisors",
+    "focusfinancialpartners",
+    "commonwealthfinancialnetwork"
 ]
+
+LEVER_BOARDS = [
+    "focusfinancialpartners",
+    "marinerwealthadvisors"
+]
+
+# =========================================================
+# SAFE GET
+# =========================================================
 
 def safe_get(url):
     try:
-        r = requests.get(url, timeout=10, headers={"User-Agent": "Mozilla/5.0"})
+        r = requests.get(url, timeout=10)
         if r.status_code != 200:
             return None
-        return r.text
+        return r.json()
     except:
         return None
 
 # =========================================================
-# DISCOVER JOB SURFACES
+# GREENHOUSE FETCH
 # =========================================================
 
-def discover_surfaces():
+def fetch_greenhouse(board):
 
-    urls = set()
+    url = f"https://boards-api.greenhouse.io/v1/boards/{board}/jobs"
+    data = safe_get(url)
 
-    for q in QUERIES:
-
-        html = safe_get(f"https://www.bing.com/search?q={q}")
-        if not html:
-            continue
-
-        soup = BeautifulSoup(html, "html.parser")
-
-        for a in soup.find_all("a", href=True):
-            href = a["href"]
-
-            if any(x in href for x in ["greenhouse", "lever", "workday", "jobs", "careers"]):
-                urls.add(href)
-
-    return list(urls)
+    return data.get("jobs", []) if data else []
 
 # =========================================================
-# JOB EXTRACTION
+# LEVER FETCH
 # =========================================================
 
-def extract_jobs(url):
+def fetch_lever(board):
 
-    html = safe_get(url)
-    if not html:
-        return []
+    url = f"https://api.lever.co/v0/postings/{board}?mode=json"
+    data = safe_get(url)
 
-    soup = BeautifulSoup(html, "html.parser")
-
-    jobs = []
-
-    for a in soup.find_all("a", href=True):
-
-        title = a.get_text(strip=True)
-
-        if len(title) < 6:
-            continue
-
-        if any(x in title.lower() for x in ["privacy", "cookie", "about", "contact", "life"]):
-            continue
-
-        jobs.append({
-            "title": title,
-            "company": infer_company(url),
-            "link": urljoin(url, a["href"]),
-            "source": "surface",
-            "date": datetime.now().strftime("%Y-%m-%d")
-        })
-
-    return jobs
+    return data if isinstance(data, list) else []
 
 # =========================================================
-# INFER COMPANY
-# =========================================================
-
-def infer_company(url):
-    try:
-        return urlparse(url).netloc.replace("www.", "")
-    except:
-        return "unknown"
-
-# =========================================================
-# MAIN ENTRYPOINT
+# SURFACE JOB ENGINE (STABLE)
 # =========================================================
 
 def get_surface_jobs():
 
-    surfaces = discover_surfaces()
+    jobs = []
 
-    all_jobs = []
+    # Greenhouse
+    for b in GREENHOUSE_BOARDS:
+        for j in fetch_greenhouse(b):
+            jobs.append({
+                "title": j.get("title"),
+                "company": b,
+                "link": j.get("absolute_url"),
+                "source": "greenhouse",
+                "date": datetime.now().strftime("%Y-%m-%d")
+            })
 
-    for s in surfaces:
-        all_jobs.extend(extract_jobs(s))
+    # Lever
+    for b in LEVER_BOARDS:
+        for j in fetch_lever(b):
+            jobs.append({
+                "title": j.get("text"),
+                "company": b,
+                "link": j.get("hostedUrl"),
+                "source": "lever",
+                "date": datetime.now().strftime("%Y-%m-%d")
+            })
 
-    # dedup
-    seen = set()
-    cleaned = []
-
-    for j in all_jobs:
-        key = (j["title"], j["company"])
-        if key not in seen:
-            seen.add(key)
-            cleaned.append(j)
-
-    return cleaned
+    return jobs
