@@ -1,42 +1,26 @@
 import requests
-from bs4 import BeautifulSoup
 from datetime import datetime
+from bs4 import BeautifulSoup
 
 # =========================================================
-# RIA ROLE INTELLIGENCE FILTER
+# ROLE INTELLIGENCE FILTERS
 # =========================================================
 
 INCLUDE_KEYWORDS = [
-    "director",
-    "vp",
-    "vice president",
-    "head",
-    "manager",
-    "lead",
-    "operations",
-    "client",
-    "service",
-    "advisor",
-    "wealth",
-    "platform",
-    "experience"
+    "director", "vp", "vice president", "head",
+    "manager", "lead", "operations",
+    "client", "service", "advisor",
+    "wealth", "platform", "experience"
 ]
 
 EXCLUDE_KEYWORDS = [
-    "engineer",
-    "software",
-    "developer",
-    "it",
-    "marketing",
-    "accountant",
-    "payroll",
-    "teacher",
-    "chef",
-    "mortgage"
+    "engineer", "software", "developer", "it",
+    "marketing", "accountant", "payroll",
+    "teacher", "chef", "mortgage"
 ]
 
 # =========================================================
-# ATS SOURCES (STRUCTURED)
+# ATS SOURCES
 # =========================================================
 
 GREENHOUSE_BOARDS = [
@@ -52,30 +36,18 @@ LEVER_BOARDS = [
 ]
 
 # =========================================================
-# INDEPENDENT RIA CAREER PAGES (CRITICAL ADDITION)
+# INDEPENDENT RIA FIRMS (NO RELY ON LINK SCRAPING STRUCTURE)
 # =========================================================
 
 RIA_CAREERS = [
-    {
-        "company": "Mercer Advisors",
-        "url": "https://www.merceradvisors.com/careers/"
-    },
-    {
-        "company": "Mariner Wealth Advisors",
-        "url": "https://www.marinerwealthadvisors.com/careers/"
-    },
-    {
-        "company": "Creative Planning",
-        "url": "https://creativeplanning.com/careers/"
-    },
-    {
-        "company": "Wealth Enhancement Group",
-        "url": "https://www.wealthenhancement.com/careers"
-    }
+    ("Mercer Advisors", "https://www.merceradvisors.com/careers/"),
+    ("Mariner Wealth Advisors", "https://www.marinerwealthadvisors.com/careers/"),
+    ("Creative Planning", "https://creativeplanning.com/careers/"),
+    ("Wealth Enhancement Group", "https://www.wealthenhancement.com/careers")
 ]
 
 # =========================================================
-# HELPERS
+# SAFE REQUEST HELPERS
 # =========================================================
 
 def safe_get_json(url):
@@ -98,6 +70,40 @@ def safe_get_html(url):
         return None
 
 # =========================================================
+# STRICT VALIDATION (CORE FIX)
+# =========================================================
+
+def is_valid_job_text(text):
+
+    if not text:
+        return False
+
+    t = text.lower()
+
+    # kill marketing / nav noise
+    noise = [
+        "call us", "learn more", "read more",
+        "contact us", "our services",
+        "investment management", "tax strategies",
+        "locations", "about us"
+    ]
+
+    if any(n in t for n in noise):
+        return False
+
+    if any(b in t for b in EXCLUDE_KEYWORDS):
+        return False
+
+    if not any(i in t for i in INCLUDE_KEYWORDS):
+        return False
+
+    # must be job-like length
+    if len(t.split()) < 3:
+        return False
+
+    return True
+
+# =========================================================
 # GREENHOUSE INGESTION
 # =========================================================
 
@@ -110,6 +116,7 @@ def fetch_greenhouse(board):
 
 
 def normalize_greenhouse(job, board):
+
     return {
         "title": job.get("title", ""),
         "company": job.get("company_name", board),
@@ -129,6 +136,7 @@ def fetch_lever(board):
 
 
 def normalize_lever(job, board):
+
     return {
         "title": job.get("text", ""),
         "company": job.get("company", board),
@@ -138,57 +146,52 @@ def normalize_lever(job, board):
     }
 
 # =========================================================
-# INDEPENDENT RIA SCRAPER (NEW CORE FIX)
+# RIA CAREER PAGE EXTRACTION (CONTROLLED)
 # =========================================================
 
-def scrape_ria_careers(company, url):
-
-    html = safe_get_html(url)
-    if not html:
-        return []
+def extract_job_cards(html, company, base_url):
 
     soup = BeautifulSoup(html, "html.parser")
 
     jobs = []
 
-    for a in soup.find_all("a"):
+    # ONLY look for structured job-like elements
+    candidates = soup.find_all(["a", "li", "div"])
 
-        text = a.get_text(strip=True)
-        href = a.get("href")
+    for c in candidates:
 
-        if not text or not href:
+        text = c.get_text(" ", strip=True)
+
+        if not is_valid_job_text(text):
             continue
 
-        full_text = f"{text} {company}"
+        # attempt to extract link safely
+        a = c.find("a")
+        link = None
 
-        if not is_valid(full_text):
-            continue
+        if a and a.get("href"):
+            link = a.get("href")
+        else:
+            link = base_url
 
         jobs.append({
             "title": text,
             "company": company,
-            "description": "Direct RIA career page listing",
-            "link": href if href.startswith("http") else url,
+            "description": "RIA career page verified posting",
+            "link": link,
             "source": "ria_direct"
         })
 
     return jobs
 
-# =========================================================
-# FILTER LOGIC (BALANCED RECALL)
-# =========================================================
 
-def is_valid(text):
+def scrape_ria_company(company, url):
 
-    t = text.lower()
+    html = safe_get_html(url)
+    if not html:
+        return []
 
-    if any(b in t for b in EXCLUDE_KEYWORDS):
-        return False
-
-    if any(i in t for i in INCLUDE_KEYWORDS):
-        return True
-
-    return False
+    return extract_job_cards(html, company, url)
 
 # =========================================================
 # MASTER INGESTION ENGINE
@@ -206,7 +209,8 @@ def get_live_jobs():
 
         for j in raw:
             job = normalize_greenhouse(j, board)
-            if is_valid(job["title"] + job["description"]):
+
+            if is_valid_job_text(job["title"] + job["description"]):
                 jobs.append(job)
 
     # -------------------------
@@ -217,14 +221,15 @@ def get_live_jobs():
 
         for j in raw:
             job = normalize_lever(j, board)
-            if is_valid(job["title"] + job["description"]):
+
+            if is_valid_job_text(job["title"] + job["description"]):
                 jobs.append(job)
 
     # -------------------------
-    # INDEPENDENT RIA CAREERS
+    # INDEPENDENT RIA FIRMS
     # -------------------------
-    for firm in RIA_CAREERS:
-        jobs += scrape_ria_careers(firm["company"], firm["url"])
+    for company, url in RIA_CAREERS:
+        jobs += scrape_ria_company(company, url)
 
     # -------------------------
     # DEDUPLICATION
