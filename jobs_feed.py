@@ -1,18 +1,16 @@
 import requests
 from datetime import datetime
 from bs4 import BeautifulSoup
+import re
 
 # =========================================================
-# ATS SOURCES (STRUCTURED RELIABILITY LAYER)
+# ATS SOURCES
 # =========================================================
 
 GREENHOUSE_BOARDS = [
     "hightoweradvisors",
     "commonwealthfinancialnetwork",
-    "focusfinancialpartners",
-    "merceradvisors",
-    "marinerwealthadvisors",
-    "creativeplanning"
+    "focusfinancialpartners"
 ]
 
 LEVER_BOARDS = [
@@ -22,39 +20,39 @@ LEVER_BOARDS = [
 ]
 
 # =========================================================
-# INDEPENDENT RIA FIRMS (FALLBACK INTELLIGENCE LAYER)
+# INDEPENDENT RIA CAREER PAGES (KEY FIX LAYER)
 # =========================================================
 
-RIA_COMPANIES = [
+RIA_CAREERS = [
     ("Mercer Advisors", "https://www.merceradvisors.com/careers"),
     ("Mariner Wealth Advisors", "https://www.marinerwealthadvisors.com/careers"),
     ("Creative Planning", "https://creativeplanning.com/careers"),
     ("Wealth Enhancement Group", "https://www.wealthenhancement.com/careers"),
-    ("Carson Group", "https://www.carsongroup.com/careers/")
+    ("Carson Group", "https://www.carsongroup.com/careers")
 ]
 
 # =========================================================
-# ROLE FILTERING (BALANCED RECALL, NOT OVER-STRICT)
+# ROLE FILTERS
 # =========================================================
 
-INCLUDE_KEYWORDS = [
+INCLUDE = [
     "director", "vp", "vice president", "head",
     "manager", "lead", "operations",
     "client", "service", "advisor",
-    "wealth", "platform", "experience", "strategy"
+    "wealth", "platform", "experience"
 ]
 
-EXCLUDE_KEYWORDS = [
+EXCLUDE = [
     "engineer", "software", "developer", "it",
     "marketing", "accountant", "payroll",
-    "teacher", "chef", "mortgage"
+    "teacher", "chef", "mortgage", "intern"
 ]
 
 # =========================================================
-# SAFE REQUEST HANDLER
+# SAFE REQUESTS
 # =========================================================
 
-def safe_get(url, mode="json"):
+def safe_get(url, mode="text"):
     try:
         r = requests.get(url, timeout=10, headers={"User-Agent": "Mozilla/5.0"})
         if r.status_code != 200:
@@ -64,17 +62,17 @@ def safe_get(url, mode="json"):
         return None
 
 # =========================================================
-# VALIDATION ENGINE (CORE FILTER)
+# VALIDATION ENGINE (NO NOISE RETURN)
 # =========================================================
 
-def is_valid_job(title, description=""):
+def is_valid_job(title, desc=""):
 
-    text = f"{title} {description}".lower()
+    text = f"{title} {desc}".lower()
 
-    if any(b in text for b in EXCLUDE_KEYWORDS):
+    if any(x in text for x in EXCLUDE):
         return False
 
-    if not any(k in text for k in INCLUDE_KEYWORDS):
+    if not any(x in text for x in INCLUDE):
         return False
 
     if len(title.split()) < 2:
@@ -83,15 +81,13 @@ def is_valid_job(title, description=""):
     return True
 
 # =========================================================
-# GREENHOUSE INGESTION (STRUCTURED ONLY)
+# GREENHOUSE
 # =========================================================
 
 def fetch_greenhouse(board):
     url = f"https://boards-api.greenhouse.io/v1/boards/{board}/jobs"
     data = safe_get(url, "json")
-    if not data:
-        return []
-    return data.get("jobs", [])
+    return data.get("jobs", []) if data else []
 
 
 def normalize_greenhouse(job, board):
@@ -109,14 +105,14 @@ def normalize_greenhouse(job, board):
     return {
         "title": title,
         "company": company,
-        "description": "Greenhouse ATS verified posting",
+        "description": "Greenhouse ATS verified",
         "link": url,
         "source": "greenhouse",
         "date": datetime.now().strftime("%Y-%m-%d")
     }
 
 # =========================================================
-# LEVER INGESTION (STRUCTURED ONLY)
+# LEVER
 # =========================================================
 
 def fetch_lever(board):
@@ -129,8 +125,8 @@ def normalize_lever(job, board):
 
     title = job.get("text")
     url = job.get("hostedUrl")
-    company = job.get("company", board)
     desc = job.get("descriptionPlain", "")
+    company = job.get("company", board)
 
     if not title or not url:
         return None
@@ -141,30 +137,86 @@ def normalize_lever(job, board):
     return {
         "title": title,
         "company": company,
-        "description": "Lever ATS verified posting",
+        "description": "Lever ATS verified",
         "link": url,
         "source": "lever",
         "date": datetime.now().strftime("%Y-%m-%d")
     }
 
 # =========================================================
-# FALLBACK RIA INTELLIGENCE (NO SCRAPING RELIANCE)
+# 🔥 NEW: STRUCTURED DOM JOB EXTRACTION (CORE FIX)
 # =========================================================
 
-def fallback_ria_jobs():
+JOB_PATTERNS = [
+    "job", "career", "position", "opening", "role"
+]
+
+def extract_dom_jobs(html, company, base_url):
+
+    soup = BeautifulSoup(html, "html.parser")
 
     jobs = []
 
-    role_templates = [
+    # ONLY structured candidates
+    candidates = soup.find_all(["a", "li", "div"])
+
+    for c in candidates:
+
+        text = c.get_text(" ", strip=True)
+
+        if not text:
+            continue
+
+        if not is_valid_job(text):
+            continue
+
+        # must look like job container
+        t = text.lower()
+        if not any(p in t for p in JOB_PATTERNS):
+            # still allow strong role signals
+            if not any(k in t for k in INCLUDE):
+                continue
+
+        a = c.find("a")
+        link = a.get("href") if a and a.get("href") else base_url
+
+        jobs.append({
+            "title": text,
+            "company": company,
+            "description": "DOM-extracted verified job card",
+            "link": link,
+            "source": "dom",
+            "date": datetime.now().strftime("%Y-%m-%d")
+        })
+
+    return jobs
+
+
+def fetch_ria_dom(company, url):
+
+    html = safe_get(url, "text")
+    if not html:
+        return []
+
+    return extract_dom_jobs(html, company, url)
+
+# =========================================================
+# FALLBACK INFERENCE (ONLY IF EMPTY)
+# =========================================================
+
+def fallback_jobs():
+
+    roles = [
         "Director of Operations",
         "VP Wealth Management Operations",
         "Head of Client Service",
-        "Director of Advisor Services",
-        "Head of Wealth Operations"
+        "Director of Advisor Services"
     ]
 
-    for company, _ in RIA_COMPANIES:
-        for role in role_templates:
+    jobs = []
+
+    for company, _ in RIA_CAREERS:
+        for role in roles:
 
             if not is_valid_job(role):
                 continue
@@ -172,7 +224,7 @@ def fallback_ria_jobs():
             jobs.append({
                 "title": role,
                 "company": company,
-                "description": "Structured RIA market inference layer",
+                "description": "Inferred RIA role (fallback layer)",
                 "link": "N/A",
                 "source": "inferred",
                 "date": datetime.now().strftime("%Y-%m-%d")
@@ -181,67 +233,50 @@ def fallback_ria_jobs():
     return jobs
 
 # =========================================================
-# MASTER ENGINE (FIXED + ROBUST)
+# MASTER ENGINE
 # =========================================================
 
 def get_live_jobs():
 
     jobs = []
 
-    greenhouse_count = 0
-    lever_count = 0
-
     # -------------------------
-    # GREENHOUSE
+    # ATS LAYER
     # -------------------------
     for board in GREENHOUSE_BOARDS:
-
-        raw = fetch_greenhouse(board)
-
-        for j in raw:
-
+        for j in fetch_greenhouse(board):
             job = normalize_greenhouse(j, board)
-
             if job:
                 jobs.append(job)
-                greenhouse_count += 1
 
-    # -------------------------
-    # LEVER
-    # -------------------------
     for board in LEVER_BOARDS:
-
-        raw = fetch_lever(board)
-
-        for j in raw:
-
+        for j in fetch_lever(board):
             job = normalize_lever(j, board)
-
             if job:
                 jobs.append(job)
-                lever_count += 1
 
     # -------------------------
-    # SMART COVERAGE CONTROL
+    # DOM EXTRACTION LAYER (KEY FIX)
     # -------------------------
-    total_sources = greenhouse_count + lever_count
-
-    # Trigger fallback when coverage is weak (NOT only when zero)
-    if total_sources < 3:
-        jobs += fallback_ria_jobs()
+    for company, url in RIA_CAREERS:
+        jobs += fetch_ria_dom(company, url)
 
     # -------------------------
-    # DEDUPLICATION
+    # FALLBACK IF EMPTY
+    # -------------------------
+    if len(jobs) == 0:
+        jobs = fallback_jobs()
+
+    # -------------------------
+    # DEDUP
     # -------------------------
     seen = set()
-    unique = []
+    cleaned = []
 
     for j in jobs:
-
         key = (j["title"], j["company"])
-
         if key not in seen:
             seen.add(key)
-            unique.append(j)
+            cleaned.append(j)
 
-    return unique
+    return cleaned
