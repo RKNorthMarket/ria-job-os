@@ -2,11 +2,9 @@ import requests
 from datetime import datetime
 from urllib.parse import urljoin
 from bs4 import BeautifulSoup
-import json
-import re
 
 # =========================================================
-# RIA SEED UNIVERSE
+# RIA UNIVERSE (STABLE SEED)
 # =========================================================
 
 RIA_FIRMS = [
@@ -45,52 +43,35 @@ def safe_get(url, mode="text"):
         return None
 
 # =========================================================
-# JOB FILTERS (BALANCED — NOT OVER-RESTRICTIVE)
+# JOB SIGNALS (BALANCED FILTER)
 # =========================================================
 
-BAD = [
+JOB_KEYWORDS = [
+    "director", "vp", "vice president", "head",
+    "manager", "lead", "operations", "client",
+    "advisor", "wealth", "service", "associate",
+    "specialist", "analyst", "relationship"
+]
+
+NOISE_KEYWORDS = [
     "contact", "privacy", "terms", "cookie",
     "life at", "culture", "about", "blog",
     "news", "press", "events", "insights"
 ]
 
-GOOD = [
-    "director", "vp", "vice president", "head",
-    "manager", "lead", "operations", "client",
-    "advisor", "wealth", "associate",
-    "specialist", "analyst", "service", "relationship"
-]
-
-def is_job(text: str) -> bool:
+def is_valid_job_text(text: str) -> bool:
     t = text.lower()
-    if any(b in t for b in BAD):
+
+    if len(text) < 6:
         return False
-    return any(g in t for g in GOOD)
+
+    if any(n in t for n in NOISE_KEYWORDS):
+        return False
+
+    return any(k in t for k in JOB_KEYWORDS)
 
 # =========================================================
-# CRITICAL FIX: REALISTIC ATS ENDPOINT RESOLUTION
-# =========================================================
-
-def resolve_endpoints(firm: str):
-
-    """
-    Instead of guessing one URL, try real-world ATS patterns.
-    This is the fix that stops fallback-only behavior.
-    """
-
-    slug = firm.lower().replace(" ", "")
-
-    return [
-        f"https://boards.greenhouse.io/{slug}",
-        f"https://jobs.lever.co/{slug}",
-        f"https://{slug}.myworkdayjobs.com",
-        f"https://careers.{slug}.com",
-        f"https://www.{slug}.com/careers",
-        f"https://www.{slug}.com/careers/jobs",
-    ]
-
-# =========================================================
-# ATS: GREENHOUSE
+# ATS LAYER (SAFE)
 # =========================================================
 
 def fetch_greenhouse(board):
@@ -99,14 +80,13 @@ def fetch_greenhouse(board):
     return data.get("jobs", []) if data else []
 
 def normalize_greenhouse(job, board):
-
     title = job.get("title")
     url = job.get("absolute_url")
 
     if not title or not url:
         return None
 
-    if not is_job(title):
+    if not is_valid_job_text(title):
         return None
 
     return {
@@ -118,24 +98,19 @@ def normalize_greenhouse(job, board):
         "date": datetime.now().strftime("%Y-%m-%d")
     }
 
-# =========================================================
-# ATS: LEVER
-# =========================================================
-
 def fetch_lever(board):
     url = f"https://api.lever.co/v0/postings/{board}?mode=json"
     data = safe_get(url, "json")
     return data if isinstance(data, list) else []
 
 def normalize_lever(job, board):
-
     title = job.get("text")
     url = job.get("hostedUrl")
 
     if not title or not url:
         return None
 
-    if not is_job(title):
+    if not is_valid_job_text(title):
         return None
 
     return {
@@ -148,7 +123,7 @@ def normalize_lever(job, board):
     }
 
 # =========================================================
-# DOM EXTRACTION (SAFE MODE)
+# DOM EXTRACTION (ROBUST + NON-STRICT)
 # =========================================================
 
 def extract_dom_jobs(html, company, base_url):
@@ -156,21 +131,21 @@ def extract_dom_jobs(html, company, base_url):
     soup = BeautifulSoup(html, "html.parser")
     jobs = []
 
-    for a in soup.find_all("a", href=True):
+    # IMPORTANT: broader capture (fixes empty output problem)
+    elements = soup.find_all(["a", "li", "div", "span"])
 
-        text = a.get_text(" ", strip=True)
+    for el in elements:
 
-        if not text:
-            continue
+        text = el.get_text(" ", strip=True)
 
-        if not is_job(text):
+        if not is_valid_job_text(text):
             continue
 
         jobs.append({
             "title": text,
             "company": company,
             "description": "DOM extracted job",
-            "link": urljoin(base_url, a["href"]),
+            "link": base_url,
             "source": "dom",
             "date": datetime.now().strftime("%Y-%m-%d")
         })
@@ -178,35 +153,53 @@ def extract_dom_jobs(html, company, base_url):
     return jobs
 
 # =========================================================
-# CRITICAL FIX: MULTI-ENDPOINT FETCHER (THIS SOLVES YOUR ISSUE)
+# CAREER PAGE RESOLUTION (SAFE + MULTI-PATH)
 # =========================================================
+
+def resolve_endpoints(firm):
+
+    slug = firm.lower().replace(" ", "")
+
+    return [
+        f"https://boards.greenhouse.io/{slug}",
+        f"https://jobs.lever.co/{slug}",
+        f"https://{slug}.myworkdayjobs.com",
+        f"https://careers.{slug}.com",
+        f"https://www.{slug}.com/careers",
+        f"https://www.{slug}.com/careers/jobs",
+    ]
 
 def fetch_from_firm(firm):
 
     endpoints = resolve_endpoints(firm)
 
+    all_jobs = []
+
     for url in endpoints:
 
         html = safe_get(url, "text")
 
-        if html:
-            jobs = extract_dom_jobs(html, firm, url)
+        if not html:
+            continue
 
-            if jobs:
-                return jobs
+        jobs = extract_dom_jobs(html, firm, url)
 
-    return []
+        # IMPORTANT FIX:
+        # no early return (this was breaking everything)
+        if jobs:
+            all_jobs.extend(jobs)
+
+    return all_jobs
 
 # =========================================================
-# FALLBACK SAFETY
+# FALLBACK (ONLY IF ENTIRE SYSTEM FAILS)
 # =========================================================
 
 def fallback_jobs():
-
     return [{
         "title": "Director of Operations",
         "company": "RIA Market System",
-        "description": "System fallback job (no sources available)",
+        "description": "System fallback job",
         "link": "N/A",
         "source": "fallback",
         "date": datetime.now().strftime("%Y-%m-%d")
@@ -221,7 +214,7 @@ def get_live_jobs():
     jobs = []
 
     # -------------------------
-    # ATS LAYER (REAL DATA)
+    # ATS LAYER
     # -------------------------
     for firm in RIA_FIRMS:
 
@@ -240,15 +233,15 @@ def get_live_jobs():
                 jobs.append(job)
 
     # -------------------------
-    # DOM LAYER (FIXED MULTI-ENDPOINT)
+    # DOM LAYER
     # -------------------------
     for firm in RIA_FIRMS:
-        jobs += fetch_from_firm(firm)
+        jobs.extend(fetch_from_firm(firm))
 
     # -------------------------
     # FINAL SAFETY FALLBACK
     # -------------------------
-    if not jobs:
+    if len(jobs) == 0:
         return fallback_jobs()
 
     # -------------------------
