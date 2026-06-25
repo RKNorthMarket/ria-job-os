@@ -4,7 +4,7 @@ from bs4 import BeautifulSoup
 import re
 
 # =========================================================
-# ATS SOURCES
+# ATS SOURCES (STRUCTURED LAYER)
 # =========================================================
 
 GREENHOUSE_BOARDS = [
@@ -20,7 +20,7 @@ LEVER_BOARDS = [
 ]
 
 # =========================================================
-# INDEPENDENT RIA CAREER PAGES (KEY FIX LAYER)
+# INDEPENDENT RIA FIRMS (CRITICAL COVERAGE LAYER)
 # =========================================================
 
 RIA_CAREERS = [
@@ -32,14 +32,17 @@ RIA_CAREERS = [
 ]
 
 # =========================================================
-# ROLE FILTERS
+# FILTERING (BALANCED - NOT OVER-RESTRICTIVE)
 # =========================================================
 
 INCLUDE = [
     "director", "vp", "vice president", "head",
     "manager", "lead", "operations",
     "client", "service", "advisor",
-    "wealth", "platform", "experience"
+    "wealth", "platform", "experience",
+    "associate", "specialist", "consultant",
+    "analyst", "coordinator", "relationship",
+    "practice", "financial advisor"
 ]
 
 EXCLUDE = [
@@ -48,8 +51,12 @@ EXCLUDE = [
     "teacher", "chef", "mortgage", "intern"
 ]
 
+JOB_PATTERNS = [
+    "job", "career", "position", "opening", "role", "opportunity"
+]
+
 # =========================================================
-# SAFE REQUESTS
+# SAFE REQUEST
 # =========================================================
 
 def safe_get(url, mode="text"):
@@ -62,7 +69,7 @@ def safe_get(url, mode="text"):
         return None
 
 # =========================================================
-# VALIDATION ENGINE (NO NOISE RETURN)
+# VALIDATION ENGINE
 # =========================================================
 
 def is_valid_job(title, desc=""):
@@ -79,6 +86,28 @@ def is_valid_job(title, desc=""):
         return False
 
     return True
+
+# =========================================================
+# JOB RELEVANCE SCORER (USED FOR DOM EXTRACTION)
+# =========================================================
+
+def job_relevance_score(text):
+
+    t = text.lower()
+    score = 0
+
+    for k in INCLUDE:
+        if k in t:
+            score += 2
+
+    for k in EXCLUDE:
+        if k in t:
+            score -= 3
+
+    if any(p in t for p in JOB_PATTERNS):
+        score += 2
+
+    return score
 
 # =========================================================
 # GREENHOUSE
@@ -144,12 +173,8 @@ def normalize_lever(job, board):
     }
 
 # =========================================================
-# 🔥 NEW: STRUCTURED DOM JOB EXTRACTION (CORE FIX)
+# DOM EXTRACTION (FIXED - NOT OVER-RESTRICTIVE)
 # =========================================================
-
-JOB_PATTERNS = [
-    "job", "career", "position", "opening", "role"
-]
 
 def extract_dom_jobs(html, company, base_url):
 
@@ -157,37 +182,34 @@ def extract_dom_jobs(html, company, base_url):
 
     jobs = []
 
-    # ONLY structured candidates
+    # IMPORTANT: do NOT over-filter DOM structure
     candidates = soup.find_all(["a", "li", "div"])
 
     for c in candidates:
 
         text = c.get_text(" ", strip=True)
 
-        if not text:
+        if not text or len(text) < 5:
             continue
 
-        if not is_valid_job(text):
+        score = job_relevance_score(text)
+
+        # soft threshold (KEY FIX)
+        if score < 2:
             continue
 
-        # must look like job container
-        t = text.lower()
-        if not any(p in t for p in JOB_PATTERNS):
-            # still allow strong role signals
-            if not any(k in t for k in INCLUDE):
-                continue
+        link_tag = c.find("a")
+        link = link_tag.get("href") if link_tag and link_tag.get("href") else base_url
 
-        a = c.find("a")
-        link = a.get("href") if a and a.get("href") else base_url
-
-        jobs.append({
-            "title": text,
-            "company": company,
-            "description": "DOM-extracted verified job card",
-            "link": link,
-            "source": "dom",
-            "date": datetime.now().strftime("%Y-%m-%d")
-        })
+        if is_valid_job(text):
+            jobs.append({
+                "title": text,
+                "company": company,
+                "description": "DOM extracted job card",
+                "link": link,
+                "source": "dom",
+                "date": datetime.now().strftime("%Y-%m-%d")
+            })
 
     return jobs
 
@@ -201,7 +223,7 @@ def fetch_ria_dom(company, url):
     return extract_dom_jobs(html, company, url)
 
 # =========================================================
-# FALLBACK INFERENCE (ONLY IF EMPTY)
+# FALLBACK (ONLY IF EMPTY SYSTEM-WIDE)
 # =========================================================
 
 def fallback_jobs():
@@ -210,7 +232,8 @@ def fallback_jobs():
         "Director of Operations",
         "VP Wealth Management Operations",
         "Head of Client Service",
-        "Director of Advisor Services"
+        "Director of Advisor Services",
+        "Wealth Management Associate"
     ]
 
     jobs = []
@@ -224,7 +247,7 @@ def fallback_jobs():
             jobs.append({
                 "title": role,
                 "company": company,
-                "description": "Inferred RIA role (fallback layer)",
+                "description": "Inference fallback role",
                 "link": "N/A",
                 "source": "inferred",
                 "date": datetime.now().strftime("%Y-%m-%d")
@@ -256,13 +279,13 @@ def get_live_jobs():
                 jobs.append(job)
 
     # -------------------------
-    # DOM EXTRACTION LAYER (KEY FIX)
+    # DOM LAYER (CRITICAL FIX)
     # -------------------------
     for company, url in RIA_CAREERS:
         jobs += fetch_ria_dom(company, url)
 
     # -------------------------
-    # FALLBACK IF EMPTY
+    # SAFETY FALLBACK
     # -------------------------
     if len(jobs) == 0:
         jobs = fallback_jobs()
