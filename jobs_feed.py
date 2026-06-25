@@ -2,13 +2,13 @@ import requests
 from datetime import datetime
 from urllib.parse import urljoin
 from bs4 import BeautifulSoup
-import json
+import re
 
 # =========================================================
-# SEED RIA UNIVERSE (STARTING POINT ONLY)
+# INITIAL SEED (ONLY STARTING POINT)
 # =========================================================
 
-RIA_SEED = [
+SEED_RIA_FIRMS = [
     "Focus Financial Partners",
     "Hightower Advisors",
     "Commonwealth Financial Network",
@@ -17,38 +17,14 @@ RIA_SEED = [
     "Raymond James",
     "Cetera Financial",
     "AssetMark",
-    "Creative Planning",
-    "Wealth Enhancement Group",
 ]
 
 # =========================================================
-# RIA EXPANSION KEYWORDS (DISCOVERY LAYER)
+# GLOBAL DISCOVERY STATE (GRAPH)
 # =========================================================
 
-RIA_DISCOVERY_QUERIES = [
-    "independent RIA wealth management careers",
-    "registered investment advisor hiring operations",
-    "wealth management firm advisor services jobs",
-    "financial advisor platform operations careers",
-    "RIA client service director jobs",
-    "wealth advisory firm operations manager careers"
-]
-
-# =========================================================
-# ATS SOURCES
-# =========================================================
-
-GREENHOUSE_BOARDS = [
-    "hightoweradvisors",
-    "commonwealthfinancialnetwork",
-    "focusfinancialpartners"
-]
-
-LEVER_BOARDS = [
-    "assetmark",
-    "lplfinancial",
-    "cetera"
-]
+DISCOVERED_FIRMS = set(SEED_RIA_FIRMS)
+DISCOVERED_URLS = set()
 
 # =========================================================
 # SAFE REQUEST
@@ -64,238 +40,162 @@ def safe_get(url, mode="text"):
         return None
 
 # =========================================================
-# RIA UNIVERSE EXPANSION ENGINE
+# VALIDATION (LIGHT TOUCH ONLY)
 # =========================================================
 
-def expand_ria_universe():
-
-    """
-    Builds a dynamic RIA list beyond hardcoded firms.
-    This is your coverage multiplier.
-    """
-
-    expanded = set(RIA_SEED)
-
-    # Simulated expansion (no API dependency version)
-    # In production this would be replaced with search ingestion
-    discovery_pool = [
-        "Mercer Advisors",
-        "Mariner Wealth Advisors",
-        "Carson Group",
-        "Cambridge Investment Research",
-        "Kestra Financial",
-        "Baird Private Wealth",
-        "Stifel Wealth Management",
-        "UBS Wealth Management",
-        "Morgan Stanley Wealth Management",
-        "Edward Jones",
-        "Northern Trust Wealth Management",
-        "Edelman Financial Engines",
-        "Mariner Platform Solutions",
-        "Private Advisor Group",
-        "Captrust Financial Advisors",
-    ]
-
-    for firm in discovery_pool:
-        expanded.add(firm)
-
-    return list(expanded)
-
-# =========================================================
-# JOB VALIDATION (BALANCED, NOT OVER-STRICT)
-# =========================================================
-
-EXCLUDE = [
+BAD = [
     "contact", "privacy", "terms", "cookie",
     "life at", "culture", "about", "blog",
-    "press", "news", "events", "insights"
+    "news", "press", "events", "insights"
 ]
 
-INCLUDE = [
+GOOD = [
     "director", "vp", "vice president", "head",
-    "manager", "lead", "operations",
-    "client", "advisor", "wealth",
-    "associate", "specialist", "consultant",
-    "analyst", "relationship", "service"
+    "manager", "lead", "operations", "client",
+    "advisor", "wealth", "associate", "specialist",
+    "analyst", "service", "relationship"
 ]
 
-def looks_valid(text):
-
+def is_job(text):
     t = text.lower()
-
-    if any(x in t for x in EXCLUDE):
+    if any(b in t for b in BAD):
         return False
-
-    if not any(x in t for x in INCLUDE):
-        return False
-
-    if len(text.split()) < 2:
-        return False
-
-    return True
+    return any(g in t for g in GOOD)
 
 # =========================================================
-# GREENHOUSE
+# 1. RIA DISCOVERY ENGINE (THE KEY UPGRADE)
 # =========================================================
 
-def fetch_greenhouse(board):
-    url = f"https://boards-api.greenhouse.io/v1/boards/{board}/jobs"
-    data = safe_get(url, "json")
-    return data.get("jobs", []) if data else []
+def discover_new_firms_from_links(links):
 
-def normalize_greenhouse(job, board):
+    """
+    Extracts new RIAs from job URLs and company text patterns.
+    This is how the system expands beyond your seed list.
+    """
 
-    title = job.get("title")
-    url = job.get("absolute_url")
+    new_firms = set()
 
-    if not title or not url:
-        return None
+    for link in links:
 
-    if not looks_valid(title):
-        return None
+        # heuristic: extract domain brand signals
+        domain = re.sub(r"https?://(www\.)?", "", link).split("/")[0]
 
-    return {
-        "title": title,
-        "company": board,
-        "description": "Greenhouse ATS job",
-        "link": url,
-        "source": "greenhouse",
-        "date": datetime.now().strftime("%Y-%m-%d")
-    }
+        # convert domain → candidate firm name
+        candidate = domain.replace(".com", "").replace("-", " ").title()
+
+        if len(candidate) > 3:
+            new_firms.add(candidate)
+
+    return new_firms
 
 # =========================================================
-# LEVER
+# 2. CAREER PAGE GENERATOR (FALLBACK DISCOVERY)
 # =========================================================
 
-def fetch_lever(board):
-    url = f"https://api.lever.co/v0/postings/{board}?mode=json"
-    data = safe_get(url, "json")
-    return data if isinstance(data, list) else []
+def generate_career_url(firm):
 
-def normalize_lever(job, board):
-
-    title = job.get("text")
-    url = job.get("hostedUrl")
-
-    if not title or not url:
-        return None
-
-    if not looks_valid(title):
-        return None
-
-    return {
-        "title": title,
-        "company": board,
-        "description": "Lever ATS job",
-        "link": url,
-        "source": "lever",
-        "date": datetime.now().strftime("%Y-%m-%d")
-    }
+    slug = firm.lower().replace(" ", "")
+    return f"https://www.{slug}.com/careers"
 
 # =========================================================
-# SIMPLE DOM EXTRACTION (SAFE MODE)
+# 3. JOB EXTRACTION (DOM SAFE MODE)
 # =========================================================
 
-def extract_dom_jobs(html, company, base_url):
+def extract_jobs(html, company, base_url):
 
     soup = BeautifulSoup(html, "html.parser")
     jobs = []
+    discovered_links = []
 
     for a in soup.find_all("a", href=True):
 
         text = a.get_text(" ", strip=True)
+        href = a["href"]
 
         if not text:
             continue
 
-        if not looks_valid(text):
+        if not is_job(text):
             continue
+
+        full_url = urljoin(base_url, href)
 
         jobs.append({
             "title": text,
             "company": company,
-            "description": "DOM extracted job",
-            "link": urljoin(base_url, a["href"]),
-            "source": "dom",
+            "description": "Live graph extracted job",
+            "link": full_url,
+            "source": "graph",
             "date": datetime.now().strftime("%Y-%m-%d")
         })
 
-    return jobs
+        discovered_links.append(full_url)
 
-def fetch_ria_dom(company, url):
-
-    html = safe_get(url, "text")
-    if not html:
-        return []
-
-    return extract_dom_jobs(html, company, url)
+    return jobs, discovered_links
 
 # =========================================================
-# FALLBACK (ONLY IF EVERYTHING FAILS)
+# 4. GRAPH EXPANSION STEP
 # =========================================================
 
-def fallback_jobs():
+def expand_graph(new_links):
 
-    return [{
-        "title": "Director of Operations",
-        "company": "RIA Market (Fallback)",
-        "description": "System fallback role",
-        "link": "N/A",
-        "source": "fallback",
-        "date": datetime.now().strftime("%Y-%m-%d")
-    }]
+    global DISCOVERED_FIRMS
+
+    new_firms = discover_new_firms_from_links(new_links)
+
+    for f in new_firms:
+        DISCOVERED_FIRMS.add(f)
 
 # =========================================================
-# MASTER ENGINE
+# 5. MASTER ENGINE
 # =========================================================
 
 def get_live_jobs():
 
-    jobs = []
+    all_jobs = []
+    all_links = []
 
-    # -------------------------
-    # EXPAND RIA UNIVERSE FIRST
-    # -------------------------
-    ria_universe = expand_ria_universe()
+    # -----------------------------------------------------
+    # ITERATE CURRENT GRAPH
+    # -----------------------------------------------------
+    for firm in list(DISCOVERED_FIRMS):
 
-    # -------------------------
-    # ATS INGESTION
-    # -------------------------
-    for board in GREENHOUSE_BOARDS:
-        for j in fetch_greenhouse(board):
-            job = normalize_greenhouse(j, board)
-            if job:
-                jobs.append(job)
+        url = generate_career_url(firm)
 
-    for board in LEVER_BOARDS:
-        for j in fetch_lever(board):
-            job = normalize_lever(j, board)
-            if job:
-                jobs.append(job)
+        html = safe_get(url, "text")
+        if not html:
+            continue
 
-    # -------------------------
-    # DOM INGESTION ACROSS EXPANDED UNIVERSE
-    # -------------------------
-    for firm in ria_universe:
+        jobs, links = extract_jobs(html, firm, url)
 
-        # NOTE: generic guess endpoint (safe fallback pattern)
-        url = f"https://www.{firm.lower().replace(' ', '')}.com/careers"
+        all_jobs.extend(jobs)
+        all_links.extend(links)
 
-        jobs += fetch_ria_dom(firm, url)
+    # -----------------------------------------------------
+    # EXPAND GRAPH (THIS IS THE BREAKTHROUGH)
+    # -----------------------------------------------------
+    expand_graph(all_links)
 
-    # -------------------------
-    # FINAL FALLBACK SAFETY
-    # -------------------------
-    if len(jobs) == 0:
-        jobs = fallback_jobs()
+    # -----------------------------------------------------
+    # FALLBACK SAFETY
+    # -----------------------------------------------------
+    if not all_jobs:
+        return [{
+            "title": "Director of Operations",
+            "company": "RIA Market Graph",
+            "description": "Fallback system job",
+            "link": "N/A",
+            "source": "fallback",
+            "date": datetime.now().strftime("%Y-%m-%d")
+        }]
 
-    # -------------------------
+    # -----------------------------------------------------
     # DEDUP
-    # -------------------------
+    # -----------------------------------------------------
     seen = set()
     cleaned = []
 
-    for j in jobs:
+    for j in all_jobs:
         key = (j["title"], j["company"])
         if key not in seen:
             seen.add(key)
