@@ -1,25 +1,19 @@
 import requests
 from bs4 import BeautifulSoup
 from urllib.parse import urljoin, urlparse
-import re
 from datetime import datetime
 
 # =========================================================
-# JOB SURFACE SOURCES (NOT FIRMS)
+# JOB SURFACE DISCOVERY QUERIES
 # =========================================================
 
-JOB_SURFACE_QUERIES = [
-    "wealth management careers operations manager",
-    "RIA client service jobs apply",
+QUERIES = [
+    "wealth management operations jobs",
+    "RIA client service manager jobs",
+    "site:lever.co wealth management",
     "site:boards.greenhouse.io advisor operations",
-    "site:jobs.lever.co wealth management",
-    "Workday financial services jobs",
-    "asset management operations careers"
+    "financial services operations careers",
 ]
-
-# =========================================================
-# SAFE FETCH
-# =========================================================
 
 def safe_get(url):
     try:
@@ -31,73 +25,36 @@ def safe_get(url):
         return None
 
 # =========================================================
-# STEP 1: DISCOVER JOB SURFACES (NOT COMPANIES)
+# DISCOVER JOB SURFACES
 # =========================================================
 
-def discover_job_surfaces():
+def discover_surfaces():
 
-    """
-    Finds job pages first, companies second.
-    """
+    urls = set()
 
-    surfaces = set()
+    for q in QUERIES:
 
-    for q in JOB_SURFACE_QUERIES:
-
-        url = f"https://www.bing.com/search?q={q}"
-        html = safe_get(url)
-
+        html = safe_get(f"https://www.bing.com/search?q={q}")
         if not html:
             continue
 
         soup = BeautifulSoup(html, "html.parser")
 
         for a in soup.find_all("a", href=True):
-
             href = a["href"]
 
-            if any(x in href.lower() for x in [
-                "greenhouse",
-                "lever",
-                "workday",
-                "jobs",
-                "careers",
-                "icims",
-                "ashby"
-            ]):
-                surfaces.add(href)
+            if any(x in href for x in ["greenhouse", "lever", "workday", "jobs", "careers"]):
+                urls.add(href)
 
-    return list(surfaces)
+    return list(urls)
 
 # =========================================================
-# STEP 2: EXTRACT JOB LINKS ONLY
+# JOB EXTRACTION
 # =========================================================
 
-JOB_HINTS = [
-    "/job", "/jobs", "/careers", "/posting", "/position", "jobId"
-]
+def extract_jobs(url):
 
-BAD_HINTS = [
-    "privacy", "cookie", "terms", "about", "life", "blog", "news", "contact"
-]
-
-def is_job_link(text):
-
-    t = text.lower()
-
-    if any(b in t for b in BAD_HINTS):
-        return False
-
-    return any(j in t for j in JOB_HINTS)
-
-# =========================================================
-# STEP 3: EXTRACT JOBS FROM SURFACE
-# =========================================================
-
-def extract_jobs(surface_url):
-
-    html = safe_get(surface_url)
-
+    html = safe_get(url)
     if not html:
         return []
 
@@ -107,43 +64,41 @@ def extract_jobs(surface_url):
 
     for a in soup.find_all("a", href=True):
 
-        title = a.get_text(" ", strip=True)
+        title = a.get_text(strip=True)
 
         if len(title) < 6:
             continue
 
-        if not is_job_link(a["href"]) and not is_job_link(title):
+        if any(x in title.lower() for x in ["privacy", "cookie", "about", "contact", "life"]):
             continue
 
         jobs.append({
             "title": title,
-            "company": infer_company(surface_url),
-            "link": urljoin(surface_url, a["href"]),
-            "source": "job_surface",
+            "company": infer_company(url),
+            "link": urljoin(url, a["href"]),
+            "source": "surface",
             "date": datetime.now().strftime("%Y-%m-%d")
         })
 
     return jobs
 
 # =========================================================
-# STEP 4: INFER COMPANY FROM DOMAIN
+# INFER COMPANY
 # =========================================================
 
 def infer_company(url):
-
     try:
-        domain = urlparse(url).netloc
-        return domain.replace("www.", "")
+        return urlparse(url).netloc.replace("www.", "")
     except:
         return "unknown"
 
 # =========================================================
-# MASTER ENGINE
+# MAIN ENTRYPOINT
 # =========================================================
 
 def get_surface_jobs():
 
-    surfaces = discover_job_surfaces()
+    surfaces = discover_surfaces()
 
     all_jobs = []
 
@@ -156,7 +111,6 @@ def get_surface_jobs():
 
     for j in all_jobs:
         key = (j["title"], j["company"])
-
         if key not in seen:
             seen.add(key)
             cleaned.append(j)
