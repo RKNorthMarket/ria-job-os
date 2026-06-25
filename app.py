@@ -3,6 +3,9 @@ import pandas as pd
 import os
 from datetime import datetime
 
+# IMPORT LIVE JOB ENGINE
+from jobs_feed import get_live_jobs
+
 # =========================================================
 # APP CONFIG
 # =========================================================
@@ -12,21 +15,21 @@ st.set_page_config(
     layout="wide"
 )
 
-st.title("🧠 RIA Executive OS — Opportunity Command Center v1.1")
+st.title("🧠 RIA Executive OS — Opportunity Command Center v2")
 
 st.write("""
-Pipeline-first executive job intelligence system:
+Next-gen job intelligence system:
 
+✔ Live RIA job ingestion (ATS + Lever + Greenhouse)  
 ✔ Pipeline tracking (CSV-backed with auto-recovery)  
-✔ Strategic RIA target mapping  
-✔ Safe verified jobs layer (no API dependency)  
+✔ Strategic target mapping  
 ✔ Deterministic scoring engine  
-✔ Crash-resistant architecture  
-✔ Daily executive briefing mode  
+✔ Daily refreshed verified job feed  
+✔ Fully crash-safe architecture  
 """)
 
 # =========================================================
-# SAFE PIPELINE BOOTSTRAP (CRITICAL FIX)
+# PIPELINE SAFE LOAD
 # =========================================================
 
 PIPELINE_FILE = "pipeline.csv"
@@ -60,22 +63,16 @@ DEFAULT_PIPELINE = pd.DataFrame([
 
 def load_pipeline():
 
-    # If file does not exist → use safe default (NO FAILURE STATE)
     if not os.path.exists(PIPELINE_FILE):
-        st.warning("⚠️ pipeline.csv not found — using built-in starter pipeline")
+        st.warning("⚠️ pipeline.csv not found — using safe default pipeline")
 
-        # optionally write it so user doesn't get stuck next deploy
         DEFAULT_PIPELINE.to_csv(PIPELINE_FILE, index=False)
-
         return DEFAULT_PIPELINE
 
     try:
         df = pd.read_csv(PIPELINE_FILE)
 
-        required_cols = [
-            "Company","Role","Status",
-            "Last Contact","Next Action","Priority"
-        ]
+        required_cols = ["Company","Role","Status","Last Contact","Next Action","Priority"]
 
         for col in required_cols:
             if col not in df.columns:
@@ -84,13 +81,13 @@ def load_pipeline():
         return df
 
     except Exception as e:
-        st.error(f"Pipeline load error: {e}")
+        st.error(f"Pipeline error: {e}")
         return DEFAULT_PIPELINE
 
 pipeline_df = load_pipeline()
 
 # =========================================================
-# STRATEGIC TARGET FIRMS
+# TARGET FIRMS
 # =========================================================
 
 TARGET_FIRMS = [
@@ -107,7 +104,7 @@ TARGET_FIRMS = [
 ]
 
 # =========================================================
-# SIMPLE FIT ENGINE (NO AI)
+# SCORING ENGINE
 # =========================================================
 
 def score_role(title, company):
@@ -116,7 +113,6 @@ def score_role(title, company):
 
     score = 0
 
-    # seniority
     if "director" in text:
         score += 25
     if "vp" in text:
@@ -124,7 +120,6 @@ def score_role(title, company):
     if "head" in text:
         score += 25
 
-    # domain alignment
     if "operations" in text:
         score += 15
     if "client" in text:
@@ -132,7 +127,6 @@ def score_role(title, company):
     if "wealth" in text or "ria" in text:
         score += 10
 
-    # hard negative filters (prevents irrelevant roles)
     bad_terms = [
         "engineer","it","developer","marketing",
         "accountant","payroll","chef","teacher","mortgage"
@@ -145,28 +139,7 @@ def score_role(title, company):
     return max(0, min(score, 100))
 
 # =========================================================
-# VERIFIED JOBS (SAFE PLACEHOLDER LAYER)
-# =========================================================
-
-def get_verified_jobs():
-
-    return [
-        {
-            "title": "Director of Operations",
-            "company": "RIA Platform (Verified Pattern)",
-            "link": "https://www.google.com/search?q=RIA+Director+of+Operations+jobs",
-            "description": "Real-world RIA operations leadership role pattern."
-        },
-        {
-            "title": "Head of Client Service",
-            "company": "Wealth Management Firm (Verified Pattern)",
-            "link": "https://www.google.com/search?q=wealth+management+client+service+director",
-            "description": "Advisor servicing and client experience leadership role pattern."
-        }
-    ]
-
-# =========================================================
-# DAILY EXECUTIVE BRIEFING (NEW FEATURE)
+# DAILY BRIEFING
 # =========================================================
 
 def daily_briefing(df):
@@ -177,17 +150,15 @@ def daily_briefing(df):
 
     st.write(f"📆 Today: {today}")
 
-    high_priority = df[df["Priority"] == "High"] if "Priority" in df.columns else df
+    high = df[df["Priority"] == "High"] if "Priority" in df.columns else df
 
-    st.write("### 🎯 Top Priorities Today")
+    st.write("### 🎯 Top Priorities")
 
-    if len(high_priority) == 0:
-        st.write("No high-priority items identified.")
+    if len(high) == 0:
+        st.write("No high-priority items.")
     else:
-        for _, row in high_priority.iterrows():
+        for _, row in high.iterrows():
             st.write(f"• {row['Company']} — {row['Role']} → {row['Next Action']}")
-
-    st.divider()
 
 # =========================================================
 # TABS
@@ -196,22 +167,21 @@ def daily_briefing(df):
 tab1, tab2, tab3 = st.tabs([
     "📊 Dashboard",
     "🎯 Strategic Targets",
-    "📡 Verified Jobs"
+    "📡 Verified Jobs (Live)"
 ])
 
 # =========================================================
-# TAB 1 — DASHBOARD
+# DASHBOARD
 # =========================================================
 
 with tab1:
 
     st.subheader("📊 Active Pipeline")
-
     st.dataframe(pipeline_df, use_container_width=True)
 
     st.subheader("⚡ Metrics")
 
-    st.metric("Total Pipeline Items", len(pipeline_df))
+    st.metric("Total Items", len(pipeline_df))
 
     if "Priority" in pipeline_df.columns:
         st.metric("High Priority", len(pipeline_df[pipeline_df["Priority"] == "High"]))
@@ -225,7 +195,7 @@ with tab1:
     daily_briefing(pipeline_df)
 
 # =========================================================
-# TAB 2 — STRATEGIC TARGETS
+# STRATEGIC TARGETS
 # =========================================================
 
 with tab2:
@@ -235,33 +205,36 @@ with tab2:
     for firm in TARGET_FIRMS:
 
         st.markdown(f"### {firm}")
-        st.write("Strategic wealth / RIA platform target")
 
         score = 85 if firm in ["Mercer Advisors", "Creative Planning"] else 75
 
         st.write(f"Fit Score: {score}")
-        st.divider()
 
 # =========================================================
-# TAB 3 — VERIFIED JOBS
+# LIVE JOBS
 # =========================================================
 
 with tab3:
 
-    st.subheader("📡 Verified Jobs")
+    st.subheader("📡 Live Verified RIA Jobs")
 
-    jobs = get_verified_jobs()
+    jobs = get_live_jobs()
 
-    for job in jobs:
+    if not jobs:
+        st.warning("No live jobs found at this time.")
+    else:
+        st.success(f"{len(jobs)} live RIA roles found")
 
-        st.markdown(f"### {job['title']}")
-        st.write(job["company"])
-        st.write(job["link"])
-        st.write(job["description"])
-        st.divider()
+        for job in jobs:
+
+            st.markdown(f"### {job['title']}")
+            st.write(f"🏢 {job['company']}")
+            st.write(f"🔗 {job['link']}")
+            st.write(job['description'])
+            st.divider()
 
 # =========================================================
 # FOOTER
 # =========================================================
 
-st.success("RIA Opportunity OS v1.1 — Fully crash-safe, pipeline-first executive system active")
+st.success("RIA Opportunity OS v2 — Live ingestion + pipeline + deterministic scoring active")
