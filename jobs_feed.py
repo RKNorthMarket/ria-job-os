@@ -1,23 +1,28 @@
 import requests
+from bs4 import BeautifulSoup
 from datetime import datetime
 
 # =========================================================
-# RIA ROLE FILTER (STRICT)
+# RIA ROLE INTELLIGENCE FILTER
 # =========================================================
 
-ALLOWED_KEYWORDS = [
+INCLUDE_KEYWORDS = [
     "director",
     "vp",
     "vice president",
     "head",
+    "manager",
+    "lead",
     "operations",
-    "client service",
+    "client",
+    "service",
+    "advisor",
     "wealth",
-    "ria",
-    "advisor"
+    "platform",
+    "experience"
 ]
 
-BLOCKED_KEYWORDS = [
+EXCLUDE_KEYWORDS = [
     "engineer",
     "software",
     "developer",
@@ -31,7 +36,7 @@ BLOCKED_KEYWORDS = [
 ]
 
 # =========================================================
-# SOURCES (SAFE + COMMON ATS)
+# ATS SOURCES (STRUCTURED)
 # =========================================================
 
 GREENHOUSE_BOARDS = [
@@ -47,10 +52,33 @@ LEVER_BOARDS = [
 ]
 
 # =========================================================
-# FETCH HELPERS
+# INDEPENDENT RIA CAREER PAGES (CRITICAL ADDITION)
 # =========================================================
 
-def safe_get(url):
+RIA_CAREERS = [
+    {
+        "company": "Mercer Advisors",
+        "url": "https://www.merceradvisors.com/careers/"
+    },
+    {
+        "company": "Mariner Wealth Advisors",
+        "url": "https://www.marinerwealthadvisors.com/careers/"
+    },
+    {
+        "company": "Creative Planning",
+        "url": "https://creativeplanning.com/careers/"
+    },
+    {
+        "company": "Wealth Enhancement Group",
+        "url": "https://www.wealthenhancement.com/careers"
+    }
+]
+
+# =========================================================
+# HELPERS
+# =========================================================
+
+def safe_get_json(url):
     try:
         r = requests.get(url, timeout=10)
         if r.status_code != 200:
@@ -59,104 +87,154 @@ def safe_get(url):
     except:
         return None
 
+
+def safe_get_html(url):
+    try:
+        r = requests.get(url, timeout=10, headers={"User-Agent": "Mozilla/5.0"})
+        if r.status_code != 200:
+            return None
+        return r.text
+    except:
+        return None
+
 # =========================================================
-# GREENHOUSE
+# GREENHOUSE INGESTION
 # =========================================================
 
 def fetch_greenhouse(board):
     url = f"https://boards-api.greenhouse.io/v1/boards/{board}/jobs"
-    data = safe_get(url)
+    data = safe_get_json(url)
     if not data:
         return []
     return data.get("jobs", [])
 
+
+def normalize_greenhouse(job, board):
+    return {
+        "title": job.get("title", ""),
+        "company": job.get("company_name", board),
+        "description": job.get("content", ""),
+        "link": job.get("absolute_url", ""),
+        "source": "greenhouse"
+    }
+
 # =========================================================
-# LEVER
+# LEVER INGESTION
 # =========================================================
 
 def fetch_lever(board):
     url = f"https://api.lever.co/v0/postings/{board}?mode=json"
-    data = safe_get(url)
+    data = safe_get_json(url)
     return data if isinstance(data, list) else []
 
+
+def normalize_lever(job, board):
+    return {
+        "title": job.get("text", ""),
+        "company": job.get("company", board),
+        "description": job.get("descriptionPlain", ""),
+        "link": job.get("hostedUrl", ""),
+        "source": "lever"
+    }
+
 # =========================================================
-# FILTER LOGIC
+# INDEPENDENT RIA SCRAPER (NEW CORE FIX)
 # =========================================================
 
-def is_valid_job(text):
+def scrape_ria_careers(company, url):
 
-    text = text.lower()
+    html = safe_get_html(url)
+    if not html:
+        return []
 
-    if any(b in text for b in BLOCKED_KEYWORDS):
+    soup = BeautifulSoup(html, "html.parser")
+
+    jobs = []
+
+    for a in soup.find_all("a"):
+
+        text = a.get_text(strip=True)
+        href = a.get("href")
+
+        if not text or not href:
+            continue
+
+        full_text = f"{text} {company}"
+
+        if not is_valid(full_text):
+            continue
+
+        jobs.append({
+            "title": text,
+            "company": company,
+            "description": "Direct RIA career page listing",
+            "link": href if href.startswith("http") else url,
+            "source": "ria_direct"
+        })
+
+    return jobs
+
+# =========================================================
+# FILTER LOGIC (BALANCED RECALL)
+# =========================================================
+
+def is_valid(text):
+
+    t = text.lower()
+
+    if any(b in t for b in EXCLUDE_KEYWORDS):
         return False
 
-    if any(a in text for a in ALLOWED_KEYWORDS):
+    if any(i in t for i in INCLUDE_KEYWORDS):
         return True
 
     return False
 
 # =========================================================
-# NORMALIZATION
-# =========================================================
-
-def normalize_job(title, company, link, description):
-
-    text = f"{title} {description}"
-
-    if not is_valid_job(text):
-        return None
-
-    return {
-        "title": title,
-        "company": company,
-        "link": link,
-        "description": description,
-        "source": "live",
-        "date": datetime.now().strftime("%Y-%m-%d")
-    }
-
-# =========================================================
-# INGESTION ENGINE
+# MASTER INGESTION ENGINE
 # =========================================================
 
 def get_live_jobs():
 
     jobs = []
 
+    # -------------------------
     # GREENHOUSE
+    # -------------------------
     for board in GREENHOUSE_BOARDS:
         raw = fetch_greenhouse(board)
 
         for j in raw:
-            job = normalize_job(
-                j.get("title", ""),
-                j.get("company_name", board),
-                j.get("absolute_url", ""),
-                j.get("content", "")
-            )
-            if job:
+            job = normalize_greenhouse(j, board)
+            if is_valid(job["title"] + job["description"]):
                 jobs.append(job)
 
+    # -------------------------
     # LEVER
+    # -------------------------
     for board in LEVER_BOARDS:
         raw = fetch_lever(board)
 
         for j in raw:
-            job = normalize_job(
-                j.get("text", ""),
-                j.get("company", board),
-                j.get("hostedUrl", ""),
-                j.get("descriptionPlain", "")
-            )
-            if job:
+            job = normalize_lever(j, board)
+            if is_valid(job["title"] + job["description"]):
                 jobs.append(job)
 
-    # DEDUPE
+    # -------------------------
+    # INDEPENDENT RIA CAREERS
+    # -------------------------
+    for firm in RIA_CAREERS:
+        jobs += scrape_ria_careers(firm["company"], firm["url"])
+
+    # -------------------------
+    # DEDUPLICATION
+    # -------------------------
     seen = set()
     unique = []
 
     for j in jobs:
         key = (j["title"], j["company"])
+
         if key not in seen:
             seen.add(key)
             unique.append(j)
