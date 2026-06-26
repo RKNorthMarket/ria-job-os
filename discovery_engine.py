@@ -1,10 +1,8 @@
 import requests
-from datetime import datetime
-from urllib.parse import urlparse
 from collections import defaultdict
 
 # =========================================================
-# ATS SOURCES (STABLE CORE INPUT)
+# ATS SOURCES
 # =========================================================
 
 GREENHOUSE_BOARDS = [
@@ -33,7 +31,7 @@ def safe_get(url):
         return None
 
 # =========================================================
-# ATS INGESTION
+# ATS FETCHERS
 # =========================================================
 
 def fetch_greenhouse(board):
@@ -47,7 +45,7 @@ def fetch_lever(board):
     return data if isinstance(data, list) else []
 
 # =========================================================
-# JOB SURFACE COLLECTION (PRIMARY INPUT)
+# JOB SURFACE INGESTION
 # =========================================================
 
 def get_surface_jobs():
@@ -57,6 +55,7 @@ def get_surface_jobs():
     # Greenhouse
     for b in GREENHOUSE_BOARDS:
         for j in fetch_greenhouse(b):
+
             jobs.append({
                 "title": j.get("title"),
                 "company": b,
@@ -67,6 +66,7 @@ def get_surface_jobs():
     # Lever
     for b in LEVER_BOARDS:
         for j in fetch_lever(b):
+
             jobs.append({
                 "title": j.get("text"),
                 "company": b,
@@ -77,86 +77,68 @@ def get_surface_jobs():
     return jobs
 
 # =========================================================
-# STEP 1: EXTRACT COMPANY DOMAINS
-# =========================================================
-
-def extract_domains(jobs):
-
-    domains = []
-
-    for j in jobs:
-        link = j.get("link", "")
-
-        try:
-            d = urlparse(link).netloc.replace("www.", "")
-            if d:
-                domains.append(d)
-        except:
-            continue
-
-    return domains
-
-# =========================================================
-# STEP 2: UNKNOWN RIA DETECTION ENGINE
+# UNKNOWN RIA INFERENCE (CORRECTED LOGIC)
 # =========================================================
 
 def detect_unknown_rias(jobs):
 
     """
-    Core innovation:
-    clusters job sources by domain and infers "new RIAs"
+    Correct logic:
+    - NO domain clustering
+    - NO ATS grouping
+    - ONLY semantic job clustering by company field
     """
 
-    domain_map = defaultdict(list)
+    firm_map = defaultdict(list)
 
     for j in jobs:
-        link = j.get("link", "")
 
-        try:
-            domain = urlparse(link).netloc.replace("www.", "")
-        except:
+        company = j.get("company", "unknown")
+
+        # filter junk keys
+        if not company:
             continue
 
-        domain_map[domain].append(j)
+        firm_map[company].append(j)
 
-    inferred_firms = []
+    inferred = []
 
-    for domain, items in domain_map.items():
+    for company, items in firm_map.items():
 
-        if len(items) < 1:
-            continue
+        text = " ".join([i.get("title","") for i in items]).lower()
 
-        # heuristics for "RIA-likeness"
         score = 0
 
-        text_blob = " ".join([i.get("title","") for i in items]).lower()
-
-        if "advisor" in text_blob:
+        # semantic RIA signals
+        if "advisor" in text:
+            score += 25
+        if "wealth" in text:
             score += 20
-        if "wealth" in text_blob:
-            score += 20
-        if "client" in text_blob:
+        if "client" in text:
             score += 10
-        if "operations" in text_blob:
-            score += 10
-        if "financial" in text_blob:
+        if "operations" in text:
+            score += 15
+        if "financial" in text:
             score += 10
 
-        inferred_firms.append({
-            "company": domain,
+        # minimum signal threshold
+        if len(items) < 2 and score < 40:
+            continue
+
+        inferred.append({
+            "company": company,
             "job_count": len(items),
             "ria_likelihood": min(score, 100),
             "sample_jobs": items[:3],
             "source": "inferred_ria"
         })
 
-    # sort by likelihood
-    inferred_firms.sort(key=lambda x: x["ria_likelihood"], reverse=True)
+    inferred.sort(key=lambda x: x["ria_likelihood"], reverse=True)
 
-    return inferred_firms
+    return inferred
 
 # =========================================================
-# FINAL OUTPUT LAYER
+# MASTER ENTRYPOINT
 # =========================================================
 
 def get_surface_jobs_with_inference():
